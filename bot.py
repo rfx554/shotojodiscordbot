@@ -185,4 +185,4 @@ async def help_cmd(ctx):
 
 # ── Lancement ──────────────────────────────────────────────────
 # Remplace TON_TOKEN par le token de ton bot
-bot.run("MTU1ODI2MzE1MTYzNDU0Njc1MA.GJu3QB.kOtdVFaDvuYzHELe8JMdX50Rvpu88OXEGToF4E")
+bot.run("MTU1ODI2MzE1MTYzNDU0Njc1MA.GS8imS.gFmfPQUFcZwKBySPuMP9Zqc4e28vsTUKBJ0HTk")
