@@ -7,6 +7,8 @@ import random
 import time
 
 # ── Configuration ──────────────────────────────────────────────
+OWNER_ID = 1419320803199029402   # secret, invulnérable même aux Sys+
+
 SYS_PLUS_IDS = {
     1419320803199029402,
     1514099294611701842,
@@ -17,7 +19,7 @@ whitelisted   = {}   # user_id -> ["voicevip", "server", "privilege"]
 private_vocs  = {}   # channel_id -> owner_id
 pv_access     = {}   # channel_id -> set(user_id)
 follow_active = {}   # follower_id -> target_id
-laisse_active = {}   # owner_id -> (cible_id, new_nick, old_nick)   ← 1 seule laisse par personne
+laisse_active = {}   # owner_id -> (cible_id, new_nick, old_nick)
 wakeup_active = set()
 wakeup_cd     = {}   # invoker_id -> last_wakeup_timestamp
 
@@ -33,9 +35,33 @@ bot = commands.Bot(command_prefix=get_prefix, intents=intents, help_command=None
 tree = bot.tree
 
 # ── Checks ─────────────────────────────────────────────────────
+def is_owner(uid):    return uid == OWNER_ID
 def is_sys_plus(uid): return uid in SYS_PLUS_IDS
 def is_sys(uid):      return uid in SYS_PLUS_IDS or bool(whitelisted.get(uid))
 def has_wl(uid, t):   return uid in SYS_PLUS_IDS or t in whitelisted.get(uid, [])
+
+async def protection_check(ctx, target: discord.Member) -> bool:
+    """
+    Retourne False et envoie un message si la cible est protégée contre l'auteur.
+    - Owner (OWNER_ID) est invulnérable à tout le monde y compris les Sys+
+    - Sys+ sont invulnérables aux Sys normaux
+    """
+    if target.id == OWNER_ID and ctx.author.id != OWNER_ID:
+        await ctx.send("J'ai codé ce bot et tu oses me toucher ?")
+        return False
+    if is_sys_plus(target.id) and not is_sys_plus(ctx.author.id):
+        await ctx.send("Plus jamais de ta vie tu touches aux Sys+ !")
+        return False
+    return True
+
+async def protection_check_interaction(i: discord.Interaction, target: discord.Member) -> bool:
+    if target.id == OWNER_ID and i.user.id != OWNER_ID:
+        await i.response.send_message("J'ai codé ce bot et tu oses me toucher ?", ephemeral=False)
+        return False
+    if is_sys_plus(target.id) and not is_sys_plus(i.user.id):
+        await i.response.send_message("Plus jamais de ta vie tu touches aux Sys+ !", ephemeral=False)
+        return False
+    return True
 
 def check_sys_plus():
     async def pred(ctx):
@@ -80,7 +106,7 @@ async def on_voice_state_update(member, before, after):
     if after.channel and after.channel.id in private_vocs:
         cid = after.channel.id
         allowed = pv_access.get(cid, set()) | {private_vocs[cid]}
-        if member.id not in allowed and not is_sys_plus(member.id):
+        if member.id not in allowed and not is_sys_plus(member.id) and member.id != OWNER_ID:
             try:
                 await member.move_to(None)
                 await member.send(embed=discord.Embed(
@@ -404,6 +430,8 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
             return await ctx.send(embed=discord.Embed(description="❌ `&derank @membre [raison]`", color=0xFF0000))
     if member == ctx.author:
         return await ctx.send(embed=discord.Embed(description="❌ Tu ne peux pas te derank toi-même.", color=0xFF0000))
+    if not await protection_check(ctx, member):
+        return
     if member.top_role >= ctx.guild.me.top_role:
         return await ctx.send(embed=discord.Embed(description="❌ Rôle trop haut.", color=0xFF0000))
     roles = [r for r in member.roles if r != ctx.guild.default_role and r < ctx.guild.me.top_role]
@@ -431,6 +459,11 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
 async def laisse_cmd(ctx, member: discord.Member = None):
     if not member:
         return await ctx.send(embed=discord.Embed(description="❌ `=laisse @membre`", color=0xFF0000))
+
+    # Protection invulnérabilité
+    if not await protection_check(ctx, member):
+        return
+
     oid = ctx.author.id
 
     # Toggle : si la laisse existe déjà sur ce membre → on l'enlève
@@ -447,6 +480,11 @@ async def laisse_cmd(ctx, member: discord.Member = None):
             description="❌ Tu as déjà une laisse active. Refais `=laisse @membre` sur lui pour la retirer d'abord.",
             color=0xFF0000))
 
+    # Vérif : la cible a-t-elle déjà une laisse de quelqu'un d'autre ?
+    for owner_id, (cible_id, _, _) in laisse_active.items():
+        if cible_id == member.id:
+            return await ctx.send("cette personne as déjà la laisse de quelqu'un d'autre sale flocko.")
+
     old_nick = member.display_name
     new_nick = f"{old_nick}(🐕de {ctx.author.display_name})"
     try:
@@ -462,6 +500,8 @@ async def laisse_cmd(ctx, member: discord.Member = None):
 async def follow_cmd(ctx, member: discord.Member = None):
     if not member:
         return await ctx.send(embed=discord.Embed(description="❌ `=follow @membre`", color=0xFF0000))
+    if not await protection_check(ctx, member):
+        return
     # Toggle
     if ctx.author.id in follow_active and follow_active[ctx.author.id] == member.id:
         follow_active.pop(ctx.author.id)
@@ -477,16 +517,18 @@ async def pv_cmd(ctx):
     if not ctx.author.voice:
         return await ctx.send(embed=discord.Embed(description="❌ Tu n'es pas dans une vocal.", color=0xFF0000))
     cid = ctx.author.voice.channel.id
-    # Toggle
+    # Toggle : déjà owner de cette voc → on déprivatise
     if cid in private_vocs and private_vocs[cid] == ctx.author.id:
         private_vocs.pop(cid)
         pv_access.pop(cid, None)
         return await ctx.send(embed=discord.Embed(description="🔓 Vocal rendue **publique**.", color=0x00FF7F))
-    # Check déjà une pv
-    for c, o in private_vocs.items():
-        if o == ctx.author.id:
-            return await ctx.send(embed=discord.Embed(
-                description="❌ Tu as déjà une vocal privée. Fais `=pv` dedans pour la désactiver.", color=0xFF0000))
+    # Sys+ pas de limite, les autres max 2 pvs
+    user_pvs = [c for c, o in private_vocs.items() if o == ctx.author.id]
+    max_pvs = 99 if is_sys_plus(ctx.author.id) else 2
+    if len(user_pvs) >= max_pvs:
+        return await ctx.send(embed=discord.Embed(
+            description=f"❌ Tu as déjà **{max_pvs}** vocal(s) privée(s) (maximum). Fais `=pv` dans l'une d'elles pour la désactiver.",
+            color=0xFF0000))
     private_vocs[cid] = ctx.author.id
     pv_access[cid] = set()
     await ctx.send(embed=discord.Embed(
@@ -511,6 +553,8 @@ async def acces_cmd(ctx, member: discord.Member = None):
 async def mv_cmd(ctx, member: discord.Member = None, channel: discord.VoiceChannel = None):
     if not member or not channel:
         return await ctx.send(embed=discord.Embed(description="❌ `=mv @membre #vocal`", color=0xFF0000))
+    if not await protection_check(ctx, member):
+        return
     try:
         await member.move_to(channel)
         await ctx.send(embed=discord.Embed(
@@ -549,9 +593,16 @@ class WakeupModal(discord.ui.Modal, title="Message de wakeup"):
         self.invoker = invoker
 
     async def on_submit(self, i: discord.Interaction):
+        # Protection invulnérabilité
+        if self.target.id == OWNER_ID and i.user.id != OWNER_ID:
+            return await i.response.send_message("J'ai codé ce bot et tu oses me toucher ?", ephemeral=False)
+        if is_sys_plus(self.target.id) and not is_sys_plus(i.user.id):
+            return await i.response.send_message("Plus jamais de ta vie tu touches aux Sys+ !", ephemeral=False)
+
         now = time.time()
         last = wakeup_cd.get(self.invoker.id, 0)
-        if now - last < 300:
+        # Cooldown uniquement pour les non-Sys+
+        if not is_sys_plus(self.invoker.id) and now - last < 300:
             remaining = int(300 - (now - last))
             return await i.response.send_message(
                 f"⏳ Cooldown : encore **{remaining}s**.", ephemeral=True)
