@@ -695,11 +695,9 @@ async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
     if not member or not message:
         return await ctx.reply(embed=discord.Embed(description="❌ `=mp @membre message`", color=0xFF0000))
     if not await protection_check(ctx, member): return
-    embed = discord.Embed(description=message, color=0x5865F2)
-    embed.set_footer(text=f"Message de {ctx.author.display_name}")
     try:
-        await member.send(embed=embed)
-        await ctx.reply(embed=discord.Embed(description=f"✅ Message envoyé à {member.mention}.", color=0x00FF7F))
+        await member.send(message)
+        await ctx.reply(embed=discord.Embed(description=f"✅ Message envoyé anonymement à {member.mention}.", color=0x00FF7F))
     except discord.Forbidden:
         await ctx.reply(embed=discord.Embed(description="❌ Impossible d'envoyer le MP (DMs fermés).", color=0xFF0000))
 
@@ -744,8 +742,12 @@ async def dog_del(i: discord.Interaction):
     await i.response.send_message(embed=discord.Embed(description="🔓 Dog retiré.", color=0xFFA500))
 
 # /wakeup
-class WakeupModal(discord.ui.Modal, title="Message de wakeup"):
-    message = discord.ui.TextInput(label="Ton message", placeholder="Ex: Réveille toi !", max_length=200)
+class WakeupModal(discord.ui.Modal, title="Wakeup"):
+    message = discord.ui.TextInput(
+        label="Message (optionnel)",
+        placeholder="Laisse vide pour le message par défaut",
+        required=False,
+        max_length=200)
     def __init__(self, target: discord.Member, invoker: discord.Member):
         super().__init__(); self.target = target; self.invoker = invoker
 
@@ -758,19 +760,21 @@ class WakeupModal(discord.ui.Modal, title="Message de wakeup"):
                 return await i.response.send_message(f"⏳ Cooldown : encore **{int(300-(now-last))}s**.", ephemeral=True)
         if self.target.id in wakeup_active:
             return await i.response.send_message("❌ Déjà en wakeup.", ephemeral=True)
-        wakeup_embed = discord.Embed(
-            title="⏰ WAKEUP",
-            description=self.message.value,
-            color=0xFF4500)
-        wakeup_embed.set_footer(text=f"Ordonné par {self.invoker.display_name}")
+
+        custom = self.message.value.strip()
+        if custom:
+            spam_msg = f"{self.target.mention} {custom}"
+        else:
+            spam_msg = f"Réveille toi {self.target.mention} ! C'est {self.invoker.mention} qui te l'ordonne"
+
         wakeup_active.add(self.target.id)
         wakeup_cd[self.invoker.id] = now
-        await i.response.send_message(f"✅ Wakeup lancé sur {self.target.mention} pendant **10 secondes** !", ephemeral=True)
+        await i.response.send_message(f"✅ Wakeup lancé sur {self.target.mention} !", ephemeral=True)
         async def do_wakeup():
             end = asyncio.get_event_loop().time() + 10
             async def spam():
                 for _ in range(20):
-                    try: await self.target.send(embed=wakeup_embed)
+                    try: await self.target.send(spam_msg)
                     except: pass
                     await asyncio.sleep(0.5)
             asyncio.create_task(spam())
@@ -877,7 +881,7 @@ async def help_cmd(ctx):
     if has_wl_sys(ctx.author.id):
         embed.add_field(name="⚡ WL Sys (=)", value="`=follow` `=pvsys` + toutes les commandes VoiceVIP", inline=False)
     if has_server(ctx.author.id):
-        embed.add_field(name="🌐 Server (= et /)", value="`=mp @m message` `/dog-add` `/dog-del` `/wakeup` `/snap` `/tipeu`", inline=False)
+        embed.add_field(name="🌐 Server (= et /)", value="`=mp id message` `/dog-add` `/dog-del` `/wakeup` `/snap` `/tipeu`", inline=False)
     if not embed.fields:
         embed.description = "Tu n'as accès à aucune commande."
     embed.set_footer(text="Refais la même commande pour toggle • Sys+ = invulnérables")
