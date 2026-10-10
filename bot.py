@@ -83,20 +83,20 @@ def save_wl():
 # ══════════════════════════════════════════════════════════════════════
 #  STOCKAGE MEMOIRE
 # ══════════════════════════════════════════════════════════════════════
-whitelisted    = load_wl()
-private_vocs   = {}
-pv_access      = {}
-follow_active  = {}
-laisse_active  = {}
-dog_active     = {}
-menotte_active = {}
-wakeup_active  = set()
-wakeup_cd      = {}
-dog_cd         = {}
-menotte_cd     = {}
-locked_nicks   = set()
+whitelisted     = load_wl()
+private_vocs    = {}
+pv_access       = {}
+follow_active   = {}
+laisse_active   = {}
+dog_active      = {}
+menotte_active  = {}
+wakeup_active   = set()
+wakeup_cd       = {}
+dog_cd          = {}
+menotte_cd      = {}
+locked_nicks    = set()
 locked_channels = {}
-maintenance    = False
+maintenance     = False
 
 # ══════════════════════════════════════════════════════════════════════
 #  BOT
@@ -138,7 +138,7 @@ async def protection_check_i(i: discord.Interaction, target: discord.Member) -> 
 def check_sys_plus():
     async def pred(ctx):
         if not is_sys_plus(ctx.author.id):
-            await ctx.reply(embed=embed_err("Commande reservee aux **Sys+**."))
+            await ctx.reply(embed=embed_err("Tu n'es pas un utilisateur **Sys+**."))
             return False
         return True
     return commands.check(pred)
@@ -149,7 +149,7 @@ def check_voicevip():
             await ctx.reply(embed=embed_warn("Le bot est en **maintenance**. Reviens plus tard."))
             return False
         if not has_voicevip(ctx.author.id):
-            await ctx.reply(embed=embed_err("Tu n'as pas la **VoiceVIP**."))
+            await ctx.reply(embed=embed_err("Tu n'es pas un utilisateur **Sys**."))
             return False
         return True
     return commands.check(pred)
@@ -160,7 +160,7 @@ def check_wl_sys():
             await ctx.reply(embed=embed_warn("Le bot est en **maintenance**. Reviens plus tard."))
             return False
         if not has_wl_sys(ctx.author.id):
-            await ctx.reply(embed=embed_err("Tu n'as pas la **WL Sys**."))
+            await ctx.reply(embed=embed_err("Tu n'es pas un utilisateur **Sys**."))
             return False
         return True
     return commands.check(pred)
@@ -173,10 +173,7 @@ async def before_any_command(ctx):
     if ctx.command and ctx.command.name == "maintenance":
         return
     if maintenance and not is_sys_plus(ctx.author.id):
-        e = embed_warn(
-            title="Maintenance en cours",
-            desc="Le bot est temporairement indisponible.\nReviens dans quelques instants !"
-        )
+        e = embed_warn(title="Maintenance en cours", desc="Le bot est temporairement indisponible.\nReviens dans quelques instants !")
         set_footer(e)
         await ctx.reply(embed=e)
         raise commands.CheckFailure("maintenance")
@@ -233,17 +230,12 @@ async def on_voice_state_update(member, before, after):
         owner_id = pv_info["owner"]
         pv_type  = pv_info["type"]
         allowed  = pv_access.get(ch_id, set()) | {owner_id}
-
         if member.id in allowed or is_owner(member.id) or is_sys_plus(member.id):
             pass
         elif pv_type == "normal" and has_wl_sys(member.id):
             pass
         else:
-            labels = {
-                "normal":  "🔒 Vocal privee",
-                "sys":     "🔒 Vocal privee Sys",
-                "sysplus": "🔒 Vocal privee Sys+",
-            }
+            labels = {"normal": "🔒 Vocal privee", "sys": "🔒 Vocal privee Sys", "sysplus": "🔒 Vocal privee Sys+"}
             try:
                 await member.move_to(None)
                 e = embed_err(title=labels.get(pv_type, "Vocal privee"), desc="Tu n'as pas acces a ce salon vocal.")
@@ -266,22 +258,12 @@ async def maintenance_cmd(ctx):
     global maintenance
     maintenance = not maintenance
     if maintenance:
-        await bot.change_presence(
-            status=discord.Status.do_not_disturb,
-            activity=discord.Game("🔧 Maintenance")
-        )
-        e = discord.Embed(
-            title="🔧  Maintenance activee",
-            description="Toutes les commandes sont **bloquees** pour les non-Sys+.\nLe bot reviendra bientot.",
-            color=C["maint"], timestamp=datetime.utcnow()
-        )
+        await bot.change_presence(status=discord.Status.do_not_disturb, activity=discord.Game("🔧 Maintenance"))
+        e = discord.Embed(title="🔧  Maintenance activee", description="Toutes les commandes sont **bloquees** pour les non-Sys+.\nLe bot reviendra bientot.", color=C["maint"], timestamp=datetime.utcnow())
         set_footer(e, ctx.author)
         await ctx.reply(embed=e)
     else:
-        await bot.change_presence(
-            status=discord.Status.online,
-            activity=discord.Activity(type=discord.ActivityType.watching, name="Shotojo 🌸 #🇯🇵")
-        )
+        await bot.change_presence(status=discord.Status.online, activity=discord.Activity(type=discord.ActivityType.watching, name="Shotojo 🌸 #🇯🇵"))
         e = embed_ok(title="Maintenance desactivee", desc="Le bot est de retour, tout est disponible.")
         set_footer(e, ctx.author)
         await ctx.reply(embed=e)
@@ -312,24 +294,15 @@ class WLView(discord.ui.View):
         icon, label, color = WL_LABELS[wl]
         lst = whitelisted.setdefault(self.target.id, [])
         if wl in lst:
-            return await i.response.send_message(
-                embed=embed_warn(f"{self.target.mention} a deja la **{label}**."), ephemeral=True)
+            return await i.response.send_message(embed=embed_warn(f"{self.target.mention} a deja la **{label}**."), ephemeral=True)
         lst.append(wl)
         save_wl()
-        e = discord.Embed(
-            title=f"{icon}  WL attribuee",
-            description=f"{self.target.mention} vient de recevoir la **{label}**.",
-            color=color, timestamp=datetime.utcnow()
-        )
+        e = discord.Embed(title=f"{icon}  WL attribuee", description=f"{self.target.mention} vient de recevoir la **{label}**.", color=color, timestamp=datetime.utcnow())
         e.set_thumbnail(url=self.target.display_avatar.url)
         set_footer(e, i.user)
         await i.response.send_message(embed=e)
         try:
-            dm = discord.Embed(
-                title=f"{icon}  Nouvelle whitelist !",
-                description=f"Tu as recu la **{label}** sur **{i.guild.name}**.",
-                color=color, timestamp=datetime.utcnow()
-            )
+            dm = discord.Embed(title=f"{icon}  Nouvelle whitelist !", description=f"Tu as recu la **{label}** sur **{i.guild.name}**.", color=color, timestamp=datetime.utcnow())
             dm.set_thumbnail(url=i.guild.icon.url if i.guild.icon else None)
             set_footer(dm)
             await self.target.send(embed=dm)
@@ -337,13 +310,10 @@ class WLView(discord.ui.View):
 
     @discord.ui.button(label="🎤 VoiceVIP",  style=discord.ButtonStyle.blurple)
     async def voicevip(self,  i, b): await self.give(i, "voicevip")
-
     @discord.ui.button(label="🌐 Server",    style=discord.ButtonStyle.green)
     async def server(self,    i, b): await self.give(i, "server")
-
     @discord.ui.button(label="⚡ WL Sys",    style=discord.ButtonStyle.grey)
     async def wl_sys(self,    i, b): await self.give(i, "sys")
-
     @discord.ui.button(label="👑 Privilege", style=discord.ButtonStyle.red)
     async def privilege(self, i, b): await self.give(i, "privilege")
 
@@ -371,9 +341,7 @@ class PVSubPanel(discord.ui.View):
     async def remove_pv(self, i, b):
         if not private_vocs:
             return await i.response.send_message(embed=embed_warn("Aucune vocal privee active."), ephemeral=True)
-        opts = [discord.SelectOption(
-            label=f"#{self.guild.get_channel(cid).name if self.guild.get_channel(cid) else cid}  [{info['type']}]",
-            value=str(cid)) for cid, info in private_vocs.items()]
+        opts = [discord.SelectOption(label=f"#{self.guild.get_channel(cid).name if self.guild.get_channel(cid) else cid}  [{info['type']}]", value=str(cid)) for cid, info in private_vocs.items()]
         v = discord.ui.View(); v.add_item(PVRemoveSelect(opts, self.guild))
         await i.response.send_message(embed=embed_info("Choisis la vocal a deprivatiser :"), view=v, ephemeral=True)
 
@@ -383,17 +351,14 @@ class PVSubPanel(discord.ui.View):
             return await i.response.send_message(embed=embed_warn("Aucune vocal privee active."), ephemeral=True)
         lines = []
         for cid, info in private_vocs.items():
-            ch = self.guild.get_channel(cid)
-            ow = self.guild.get_member(info["owner"])
+            ch = self.guild.get_channel(cid); ow = self.guild.get_member(info["owner"])
             lines.append(f"> **#{ch.name if ch else cid}**  `{info['type']}`  •  {ow.mention if ow else info['owner']}")
-        e = embed_info("\n".join(lines), title=f"🔒 Vocaux prives ({len(private_vocs)})")
-        await i.response.send_message(embed=e, ephemeral=True)
+        await i.response.send_message(embed=embed_info("\n".join(lines), title=f"🔒 Vocaux prives ({len(private_vocs)})"), ephemeral=True)
 
 class PVRemoveSelect(discord.ui.Select):
     def __init__(self, opts, guild): super().__init__(placeholder="Selectionner...", options=opts); self.guild = guild
     async def callback(self, i):
-        cid = int(self.values[0])
-        private_vocs.pop(cid, None); pv_access.pop(cid, None)
+        cid = int(self.values[0]); private_vocs.pop(cid, None); pv_access.pop(cid, None)
         ch = self.guild.get_channel(cid)
         await i.response.send_message(embed=embed_ok(f"**#{ch.name if ch else cid}** est maintenant publique."), ephemeral=True)
 
@@ -407,8 +372,7 @@ class LaisseSubPanel(discord.ui.View):
         opts = []
         for oid, (cid, _, _) in laisse_active.items():
             ow = self.guild.get_member(oid); ci = self.guild.get_member(cid)
-            opts.append(discord.SelectOption(
-                label=f"{ow.display_name if ow else oid}  ->  {ci.display_name if ci else cid}", value=str(oid)))
+            opts.append(discord.SelectOption(label=f"{ow.display_name if ow else oid}  ->  {ci.display_name if ci else cid}", value=str(oid)))
         v = discord.ui.View(); v.add_item(LaisseRemoveSelect(opts, self.guild))
         await i.response.send_message(embed=embed_info("Choisis la laisse a retirer :"), view=v, ephemeral=True)
 
@@ -417,14 +381,12 @@ class LaisseSubPanel(discord.ui.View):
         if not laisse_active:
             return await i.response.send_message(embed=embed_warn("Aucune laisse active."), ephemeral=True)
         lines = [f"> {self.guild.get_member(o).mention if self.guild.get_member(o) else o}  ->  {self.guild.get_member(c).mention if self.guild.get_member(c) else c}" for o,(c,_,_) in laisse_active.items()]
-        e = embed_info("\n".join(lines), title=f"🐕 Laisses actives ({len(laisse_active)})")
-        await i.response.send_message(embed=e, ephemeral=True)
+        await i.response.send_message(embed=embed_info("\n".join(lines), title=f"🐕 Laisses actives ({len(laisse_active)})"), ephemeral=True)
 
 class LaisseRemoveSelect(discord.ui.Select):
     def __init__(self, opts, guild): super().__init__(placeholder="Selectionner...", options=opts); self.guild = guild
     async def callback(self, i):
-        oid   = int(self.values[0])
-        entry = laisse_active.pop(oid, None)
+        oid = int(self.values[0]); entry = laisse_active.pop(oid, None)
         if entry:
             m = self.guild.get_member(entry[0])
             if m:
@@ -442,8 +404,7 @@ class FollowSubPanel(discord.ui.View):
         opts = []
         for fid, tid in follow_active.items():
             f = self.guild.get_member(fid); t = self.guild.get_member(tid)
-            opts.append(discord.SelectOption(
-                label=f"{f.display_name if f else fid}  suit  {t.display_name if t else tid}", value=str(fid)))
+            opts.append(discord.SelectOption(label=f"{f.display_name if f else fid}  suit  {t.display_name if t else tid}", value=str(fid)))
         v = discord.ui.View(); v.add_item(FollowRemoveSelect(opts))
         await i.response.send_message(embed=embed_info("Choisis le follow a retirer :"), view=v, ephemeral=True)
 
@@ -452,8 +413,7 @@ class FollowSubPanel(discord.ui.View):
         if not follow_active:
             return await i.response.send_message(embed=embed_warn("Aucun follow actif."), ephemeral=True)
         lines = [f"> {self.guild.get_member(f).mention if self.guild.get_member(f) else f}  suit  {self.guild.get_member(t).mention if self.guild.get_member(t) else t}" for f,t in follow_active.items()]
-        e = embed_info("\n".join(lines), title=f"🏃 Follows actifs ({len(follow_active)})")
-        await i.response.send_message(embed=e, ephemeral=True)
+        await i.response.send_message(embed=embed_info("\n".join(lines), title=f"🏃 Follows actifs ({len(follow_active)})"), ephemeral=True)
 
 class FollowRemoveSelect(discord.ui.Select):
     def __init__(self, opts): super().__init__(placeholder="Selectionner...", options=opts)
@@ -473,8 +433,7 @@ class WLSubPanel(discord.ui.View):
             m = self.guild.get_member(uid)
             for wl in wls:
                 icon = WL_LABELS.get(wl, ("•", wl, 0))[0]
-                opts.append(discord.SelectOption(
-                    label=f"{m.display_name if m else uid}  -  {icon} {wl}", value=f"{uid}:{wl}"))
+                opts.append(discord.SelectOption(label=f"{m.display_name if m else uid}  -  {icon} {wl}", value=f"{uid}:{wl}"))
         v = discord.ui.View(); v.add_item(WLRemoveSelect(opts, self.guild))
         await i.response.send_message(embed=embed_info("Choisis la WL a retirer :"), view=v, ephemeral=True)
 
@@ -487,30 +446,24 @@ class WLSubPanel(discord.ui.View):
             m = self.guild.get_member(uid)
             badges = "  ".join(f"{WL_LABELS.get(w,('•',w,0))[0]} `{w}`" for w in wls)
             lines.append(f"> **{m.display_name if m else uid}**  ->  {badges}")
-        e = embed_info("\n".join(lines), title="👥 Whitelists actives")
-        await i.response.send_message(embed=e, ephemeral=True)
+        await i.response.send_message(embed=embed_info("\n".join(lines), title="👥 Whitelists actives"), ephemeral=True)
 
 class WLRemoveSelect(discord.ui.Select):
     def __init__(self, opts, guild): super().__init__(placeholder="Selectionner...", options=opts); self.guild = guild
     async def callback(self, i):
-        uid_s, wl = self.values[0].split(":")
-        uid = int(uid_s)
+        uid_s, wl = self.values[0].split(":"); uid = int(uid_s)
         if uid in whitelisted and wl in whitelisted[uid]:
             whitelisted[uid].remove(wl)
             if not whitelisted[uid]: del whitelisted[uid]
             save_wl()
-        m    = self.guild.get_member(uid)
+        m = self.guild.get_member(uid)
         icon, label, color = WL_LABELS.get(wl, ("•", wl, C["error"]))
         e = embed_ok(f"La **{label}** a ete retiree a **{m.display_name if m else uid}**.")
         set_footer(e, i.user)
         await i.response.send_message(embed=e, ephemeral=True)
         if m:
             try:
-                dm = discord.Embed(
-                    title=f"🚫  Whitelist retiree",
-                    description=f"Ta **{label}** t'a ete retiree sur **{i.guild.name}**.",
-                    color=C["error"], timestamp=datetime.utcnow()
-                )
+                dm = discord.Embed(title="🚫  Whitelist retiree", description=f"Ta **{label}** t'a ete retiree sur **{i.guild.name}**.", color=C["error"], timestamp=datetime.utcnow())
                 dm.set_thumbnail(url=i.guild.icon.url if i.guild.icon else None)
                 set_footer(dm)
                 await m.send(embed=dm)
@@ -524,53 +477,39 @@ class VoiceVIPMainPanel(discord.ui.View):
 
     @discord.ui.button(label="🔒 Vocs Privees", style=discord.ButtonStyle.blurple, row=0)
     async def pv(self, i, b):
-        e = embed_info(f"**{len(private_vocs)}** vocal(s) privee(s) active(s).", title="🔒 Vocaux Prives", color=C["purple"])
-        await i.response.send_message(embed=e, view=PVSubPanel(self.guild), ephemeral=True)
+        await i.response.send_message(embed=embed_info(f"**{len(private_vocs)}** vocal(s) privee(s) active(s).", title="🔒 Vocaux Prives", color=C["purple"]), view=PVSubPanel(self.guild), ephemeral=True)
 
     @discord.ui.button(label="🐕 Laisses", style=discord.ButtonStyle.blurple, row=0)
     async def laisse(self, i, b):
-        e = embed_info(f"**{len(laisse_active)}** laisse(s) active(s).", title="🐕 Laisses", color=C["orange"])
-        await i.response.send_message(embed=e, view=LaisseSubPanel(self.guild), ephemeral=True)
+        await i.response.send_message(embed=embed_info(f"**{len(laisse_active)}** laisse(s) active(s).", title="🐕 Laisses", color=C["orange"]), view=LaisseSubPanel(self.guild), ephemeral=True)
 
     @discord.ui.button(label="🏃 Follows", style=discord.ButtonStyle.blurple, row=0)
     async def follow(self, i, b):
-        e = embed_info(f"**{len(follow_active)}** follow(s) actif(s).", title="🏃 Follows", color=C["teal"])
-        await i.response.send_message(embed=e, view=FollowSubPanel(self.guild), ephemeral=True)
+        await i.response.send_message(embed=embed_info(f"**{len(follow_active)}** follow(s) actif(s).", title="🏃 Follows", color=C["teal"]), view=FollowSubPanel(self.guild), ephemeral=True)
 
     @discord.ui.button(label="👥 Whitelists", style=discord.ButtonStyle.blurple, row=0)
     async def wl(self, i, b):
         total = sum(len(v) for v in whitelisted.values())
-        e = embed_info(f"**{total}** WL active(s) au total.", title="👥 Whitelists", color=C["sys"])
-        await i.response.send_message(embed=e, view=WLSubPanel(self.guild), ephemeral=True)
+        await i.response.send_message(embed=embed_info(f"**{total}** WL active(s) au total.", title="👥 Whitelists", color=C["sys"]), view=WLSubPanel(self.guild), ephemeral=True)
 
 def build_wlpanel_embed(guild):
-    voicevip_p = set(SYS_PLUS_IDS)
-    server_p   = set(SYS_PLUS_IDS)
-    sys_p      = set(SYS_PLUS_IDS)
-    priv_p     = set()
-
+    voicevip_p = set(SYS_PLUS_IDS); server_p = set(SYS_PLUS_IDS); sys_p = set(SYS_PLUS_IDS); priv_p = set()
     for uid, wls in whitelisted.items():
         if "voicevip"  in wls: voicevip_p.add(uid)
         if "server"    in wls: server_p.add(uid)
         if "sys"       in wls: sys_p.add(uid)
         if "privilege" in wls: priv_p.add(uid)
-
     status_icon = "🔴" if maintenance else "🟢"
     status_txt  = "**EN MAINTENANCE**" if maintenance else "**Operationnel**"
-
-    e = discord.Embed(
-        title="🎛️  Panel de controle - Sys+",
-        color=C["maint"] if maintenance else C["dark"],
-        timestamp=datetime.utcnow()
-    )
+    e = discord.Embed(title="🎛️  Panel de controle - Sys+", color=C["maint"] if maintenance else C["dark"], timestamp=datetime.utcnow())
     e.add_field(name=f"{status_icon} Statut", value=status_txt, inline=False)
-    e.add_field(name="🎤 VoiceVIP",    value=f"`{len(voicevip_p)}` membres", inline=True)
-    e.add_field(name="🌐 Server",      value=f"`{len(server_p)}` membres",   inline=True)
-    e.add_field(name="⚡ WL Sys",      value=f"`{len(sys_p)}` membres",      inline=True)
-    e.add_field(name="👑 Privilege",   value=f"`{len(priv_p)}` membres",     inline=True)
-    e.add_field(name="🔒 Vocs priv.",  value=f"`{len(private_vocs)}`",       inline=True)
-    e.add_field(name="🐕 Laisses",     value=f"`{len(laisse_active)}`",      inline=True)
-    e.add_field(name="🏃 Follows",     value=f"`{len(follow_active)}`",      inline=True)
+    e.add_field(name="🎤 VoiceVIP",   value=f"`{len(voicevip_p)}` membres", inline=True)
+    e.add_field(name="🌐 Server",     value=f"`{len(server_p)}` membres",   inline=True)
+    e.add_field(name="⚡ WL Sys",     value=f"`{len(sys_p)}` membres",      inline=True)
+    e.add_field(name="👑 Privilege",  value=f"`{len(priv_p)}` membres",     inline=True)
+    e.add_field(name="🔒 Vocs priv.", value=f"`{len(private_vocs)}`",       inline=True)
+    e.add_field(name="🐕 Laisses",   value=f"`{len(laisse_active)}`",       inline=True)
+    e.add_field(name="🏃 Follows",   value=f"`{len(follow_active)}`",       inline=True)
     e.add_field(name="\u200b", value="\u200b", inline=True)
     set_footer(e)
     return e
@@ -583,12 +522,11 @@ async def wlpanel_cmd(ctx):
 @bot.command(name="restartpanel")
 @check_sys_plus()
 async def restartpanel_cmd(ctx):
-    e = build_wlpanel_embed(ctx.guild)
-    e.title = "🔄  Panel redémarre"
+    e = build_wlpanel_embed(ctx.guild); e.title = "🔄  Panel redémarre"
     await ctx.reply(embed=e, view=VoiceVIPMainPanel(ctx.guild))
 
 # ══════════════════════════════════════════════════════════════════════
-#  COMMANDES SYS+ - &clear / &derank
+#  &clear / &derank
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="clear")
 @check_sys_plus()
@@ -607,8 +545,7 @@ async def clear_cmd(ctx, amount: int = 50):
 async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucune raison fournie"):
     if not member:
         if ctx.message.reference:
-            ref    = await ctx.channel.fetch_message(ctx.message.reference.message_id)
-            member = ref.author
+            ref = await ctx.channel.fetch_message(ctx.message.reference.message_id); member = ref.author
         else:
             return await ctx.reply(embed=embed_err("Usage : `&derank @membre [raison]`"))
     if member == ctx.author:
@@ -622,29 +559,25 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
     await member.remove_roles(*roles, reason=f"Derank par {ctx.author} - {reason}")
     e = discord.Embed(title="🔨  Derank execute", color=C["orange"], timestamp=datetime.utcnow())
     e.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-    e.add_field(name="Membre", value=member.mention,    inline=True)
+    e.add_field(name="Membre", value=member.mention,     inline=True)
     e.add_field(name="Par",    value=ctx.author.mention, inline=True)
-    e.add_field(name="Raison", value=f"*{reason}*",     inline=False)
+    e.add_field(name="Raison", value=f"*{reason}*",      inline=False)
     set_footer(e, ctx.author)
     await ctx.reply(embed=e)
     try:
-        dm = discord.Embed(
-            title="⚠️  Tu as ete derank",
-            description=f"Tous tes roles ont ete retires sur **{ctx.guild.name}**.\n\n> *{reason}*",
-            color=C["orange"], timestamp=datetime.utcnow()
-        )
+        dm = discord.Embed(title="⚠️  Tu as ete derank", description=f"Tous tes roles ont ete retires sur **{ctx.guild.name}**.\n\n> *{reason}*", color=C["orange"], timestamp=datetime.utcnow())
         set_footer(dm)
         await member.send(embed=dm)
     except: pass
 
 # ══════════════════════════════════════════════════════════════════════
-#  /addrole
+#  /addrole  /removerole
 # ══════════════════════════════════════════════════════════════════════
 @tree.command(name="addrole", description="Ajouter un role a un membre ou a tout le serveur (Sys+)")
 @app_commands.describe(role="Le role a ajouter", tous="Ajouter a tous les membres ?", membre="Le membre cible")
 async def addrole_slash(i: discord.Interaction, role: discord.Role, tous: bool, membre: discord.Member = None):
     if not is_sys_plus(i.user.id):
-        return await i.response.send_message(embed=embed_err("Commande reservee aux **Sys+**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys+**."), ephemeral=True)
     if role >= i.guild.me.top_role:
         return await i.response.send_message(embed=embed_err("Ce role est trop haut pour moi."), ephemeral=True)
     if tous:
@@ -658,8 +591,7 @@ async def addrole_slash(i: discord.Interaction, role: discord.Role, tous: bool, 
         e.add_field(name="Role",   value=role.mention, inline=True)
         e.add_field(name="Reussi", value=f"`{ok}`",    inline=True)
         e.add_field(name="Echec",  value=f"`{fail}`",  inline=True)
-        set_footer(e, i.user)
-        await i.followup.send(embed=e)
+        set_footer(e, i.user); await i.followup.send(embed=e)
     else:
         if not membre:
             return await i.response.send_message(embed=embed_err("Precise un membre ou active **tous**."), ephemeral=True)
@@ -671,19 +603,15 @@ async def addrole_slash(i: discord.Interaction, role: discord.Role, tous: bool, 
             e = embed_ok(title="Role ajoute")
             e.add_field(name="Membre", value=membre.mention, inline=True)
             e.add_field(name="Role",   value=role.mention,   inline=True)
-            set_footer(e, i.user)
-            await i.response.send_message(embed=e)
+            set_footer(e, i.user); await i.response.send_message(embed=e)
         except discord.Forbidden:
             await i.response.send_message(embed=embed_err("Impossible d'ajouter ce role."), ephemeral=True)
 
-# ══════════════════════════════════════════════════════════════════════
-#  /removerole
-# ══════════════════════════════════════════════════════════════════════
 @tree.command(name="removerole", description="Retirer un role a un membre ou a tout le serveur (Sys+)")
 @app_commands.describe(role="Le role a retirer", tous="Retirer a tous les membres ?", membre="Le membre cible")
 async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: bool, membre: discord.Member = None):
     if not is_sys_plus(i.user.id):
-        return await i.response.send_message(embed=embed_err("Commande reservee aux **Sys+**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys+**."), ephemeral=True)
     if role >= i.guild.me.top_role:
         return await i.response.send_message(embed=embed_err("Ce role est trop haut pour moi."), ephemeral=True)
     if tous:
@@ -697,8 +625,7 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
         e.add_field(name="Role",   value=role.mention, inline=True)
         e.add_field(name="Reussi", value=f"`{ok}`",    inline=True)
         e.add_field(name="Echec",  value=f"`{fail}`",  inline=True)
-        set_footer(e, i.user)
-        await i.followup.send(embed=e)
+        set_footer(e, i.user); await i.followup.send(embed=e)
     else:
         if not membre:
             return await i.response.send_message(embed=embed_err("Precise un membre ou active **tous**."), ephemeral=True)
@@ -710,8 +637,7 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
             e = discord.Embed(title="✅  Role retire", color=C["orange"], timestamp=datetime.utcnow())
             e.add_field(name="Membre", value=membre.mention, inline=True)
             e.add_field(name="Role",   value=role.mention,   inline=True)
-            set_footer(e, i.user)
-            await i.response.send_message(embed=e)
+            set_footer(e, i.user); await i.response.send_message(embed=e)
         except discord.Forbidden:
             await i.response.send_message(embed=embed_err("Impossible de retirer ce role."), ephemeral=True)
 
@@ -730,23 +656,20 @@ async def laisse_cmd(ctx, member: discord.Member = None):
         try: await member.edit(nick=on)
         except: pass
         e = embed_warn(f"Laisse retiree a {member.mention}.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        set_footer(e, ctx.author); return await ctx.reply(embed=e)
     if oid in laisse_active:
         return await ctx.reply(embed=embed_err("Tu as deja une laisse active."))
     for o, (cid, _, _) in laisse_active.items():
         if cid == member.id:
             return await ctx.reply(embed=embed_err("Cette personne a deja la laisse de quelqu'un d'autre."))
-    old = member.display_name
-    new = f"{old} (🐕 de {ctx.author.display_name})"
+    old = member.display_name; new = f"{old} (🐕 de {ctx.author.display_name})"
     try:
         await member.edit(nick=new)
     except discord.Forbidden:
         return await ctx.reply(embed=embed_err("Impossible de changer son pseudo."))
     laisse_active[oid] = (member.id, new, old)
     e = embed_ok(f"{member.mention} est maintenant sous ta laisse. 🐕")
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 @bot.command(name="pv")
 @check_voicevip()
@@ -756,24 +679,16 @@ async def pv_cmd(ctx):
     cid = ctx.author.voice.channel.id
     if cid in private_vocs and private_vocs[cid]["owner"] == ctx.author.id:
         private_vocs.pop(cid); pv_access.pop(cid, None)
-        e = embed_ok("Vocal rendue **publique**.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        e = embed_ok("Vocal rendue **publique**."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
     user_pvs = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
     max_pvs  = 99 if is_sys_plus(ctx.author.id) else 2
     if len(user_pvs) >= max_pvs:
         return await ctx.reply(embed=embed_err(f"Tu as deja **{max_pvs}** vocal(s) privee(s) max."))
     pv_type = "sysplus" if is_sys_plus(ctx.author.id) else ("sys" if has_wl_sys(ctx.author.id) else "normal")
-    private_vocs[cid] = {"owner": ctx.author.id, "type": pv_type}
-    pv_access[cid]    = set()
+    private_vocs[cid] = {"owner": ctx.author.id, "type": pv_type}; pv_access[cid] = set()
     labels = {"normal": "normale", "sys": "Sys", "sysplus": "Sys+"}
-    e = discord.Embed(
-        title=f"🔒  Vocal privee [{labels[pv_type]}]",
-        description=f"**{ctx.author.voice.channel.name}** est maintenant privee.",
-        color=C["purple"], timestamp=datetime.utcnow()
-    )
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    e = discord.Embed(title=f"🔒  Vocal privee [{labels[pv_type]}]", description=f"**{ctx.author.voice.channel.name}** est maintenant privee.", color=C["purple"], timestamp=datetime.utcnow())
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 @bot.command(name="acces")
 @check_voicevip()
@@ -788,13 +703,10 @@ async def acces_cmd(ctx, member: discord.Member = None):
     acc = pv_access.setdefault(cid, set())
     if member.id in acc:
         acc.discard(member.id)
-        e = embed_warn(f"Acces retire a **{member.display_name}**.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        e = embed_warn(f"Acces retire a **{member.display_name}**."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
     acc.add(member.id)
     e = embed_ok(f"**{member.display_name}** peut maintenant rejoindre ta vocal privee.")
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 @bot.command(name="join")
 @check_voicevip()
@@ -808,9 +720,7 @@ async def join_cmd(ctx, member: discord.Member = None):
         return await ctx.reply(embed=embed_err("Tu n'es pas en vocal."))
     try:
         await ctx.author.move_to(member.voice.channel)
-        e = embed_ok(f"Rejoint **{member.voice.channel.name}**.")
-        set_footer(e, ctx.author)
-        await ctx.reply(embed=e)
+        e = embed_ok(f"Rejoint **{member.voice.channel.name}**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
     except discord.Forbidden:
         await ctx.reply(embed=embed_err("Impossible de te deplacer."))
 
@@ -822,9 +732,7 @@ async def mv_cmd(ctx, member: discord.Member = None, channel: discord.VoiceChann
     if not await protection_check(ctx, member): return
     try:
         await member.move_to(channel)
-        e = embed_ok(f"**{member.display_name}** deplace dans **{channel.name}**.")
-        set_footer(e, ctx.author)
-        await ctx.reply(embed=e)
+        e = embed_ok(f"**{member.display_name}** deplace dans **{channel.name}**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
     except discord.Forbidden:
         await ctx.reply(embed=embed_err("Impossible de deplacer ce membre."))
 
@@ -835,17 +743,11 @@ async def pvlist_cmd(ctx):
         return await ctx.reply(embed=embed_warn("Aucune vocal privee active."))
     e = discord.Embed(title="🔒  Vocaux prives actifs", color=C["purple"], timestamp=datetime.utcnow())
     for cid, info in private_vocs.items():
-        ch  = ctx.guild.get_channel(cid)
-        ow  = ctx.guild.get_member(info["owner"])
+        ch  = ctx.guild.get_channel(cid); ow = ctx.guild.get_member(info["owner"])
         acc = [ctx.guild.get_member(u) for u in pv_access.get(cid, set())]
         acc_str = ", ".join(m.display_name for m in acc if m) or "*Personne*"
-        e.add_field(
-            name=f"#{ch.name if ch else cid}  [{info['type']}]",
-            value=f"Owner : {ow.mention if ow else info['owner']}\nAcces : {acc_str}",
-            inline=False
-        )
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+        e.add_field(name=f"#{ch.name if ch else cid}  [{info['type']}]", value=f"Owner : {ow.mention if ow else info['owner']}\nAcces : {acc_str}", inline=False)
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 @bot.command(name="menotte")
 @check_voicevip()
@@ -853,13 +755,10 @@ async def menotte_cmd(ctx, member: discord.Member = None):
     if not member:
         return await ctx.reply(embed=embed_err("Usage : `=menotte @membre`"))
     if not await protection_check(ctx, member): return
-    oid = ctx.author.id
-    now = time.time()
+    oid = ctx.author.id; now = time.time()
     if oid in menotte_active and menotte_active[oid][0] == member.id:
         menotte_active.pop(oid)
-        e = embed_warn(f"Menotte retiree a {member.mention}.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        e = embed_warn(f"Menotte retiree a {member.mention}."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
     if oid in menotte_active:
         return await ctx.reply(embed=embed_err("Tu as deja une menotte active."))
     if not is_sys_plus(oid):
@@ -869,15 +768,9 @@ async def menotte_cmd(ctx, member: discord.Member = None):
     if not member.voice:
         return await ctx.reply(embed=embed_err("Ce membre n'est pas en vocal."))
     ch_id = member.voice.channel.id
-    menotte_active[oid] = (member.id, ch_id)
-    menotte_cd[oid]     = now
-    e = discord.Embed(
-        title="⛓️  Menotte posee",
-        description=f"{member.mention} est desormais menotté dans **{member.voice.channel.name}**.",
-        color=C["info"], timestamp=datetime.utcnow()
-    )
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    menotte_active[oid] = (member.id, ch_id); menotte_cd[oid] = now
+    e = discord.Embed(title="⛓️  Menotte posee", description=f"{member.mention} est desormais menotté dans **{member.voice.channel.name}**.", color=C["info"], timestamp=datetime.utcnow())
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
 #  COMMANDES WL SYS (=)
@@ -890,13 +783,9 @@ async def follow_cmd(ctx, member: discord.Member = None):
     if not await protection_check(ctx, member): return
     if ctx.author.id in follow_active and follow_active[ctx.author.id] == member.id:
         follow_active.pop(ctx.author.id)
-        e = embed_warn(f"Follow sur **{member.display_name}** retire.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        e = embed_warn(f"Follow sur **{member.display_name}** retire."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
     follow_active[ctx.author.id] = member.id
-    e = embed_ok(f"Tu suis maintenant **{member.display_name}** en vocal. 🏃")
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    e = embed_ok(f"Tu suis maintenant **{member.display_name}** en vocal. 🏃"); set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 @bot.command(name="pvsys")
 @check_wl_sys()
@@ -906,21 +795,13 @@ async def pvsys_cmd(ctx):
     cid = ctx.author.voice.channel.id
     if cid in private_vocs and private_vocs[cid]["owner"] == ctx.author.id:
         private_vocs.pop(cid); pv_access.pop(cid, None)
-        e = embed_ok("PV Sys desactivee, vocal rendue publique.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        e = embed_ok("PV Sys desactivee, vocal rendue publique."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
     user_pvs = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
     if len(user_pvs) >= 2 and not is_sys_plus(ctx.author.id):
         return await ctx.reply(embed=embed_err("Maximum **2** vocaux prives."))
-    private_vocs[cid] = {"owner": ctx.author.id, "type": "sys"}
-    pv_access[cid]    = set()
-    e = discord.Embed(
-        title="🔒  Vocal privee Sys",
-        description=f"**{ctx.author.voice.channel.name}** est maintenant en PV Sys.",
-        color=C["info"], timestamp=datetime.utcnow()
-    )
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    private_vocs[cid] = {"owner": ctx.author.id, "type": "sys"}; pv_access[cid] = set()
+    e = discord.Embed(title="🔒  Vocal privee Sys", description=f"**{ctx.author.voice.channel.name}** est maintenant en PV Sys.", color=C["info"], timestamp=datetime.utcnow())
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
 #  COMMANDES SERVER
@@ -930,15 +811,13 @@ async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
     if maintenance and not is_sys_plus(ctx.author.id):
         return await ctx.reply(embed=embed_warn("Le bot est en **maintenance**."))
     if not has_server(ctx.author.id):
-        return await ctx.reply(embed=embed_err("Tu n'as pas la **Server WL**."))
+        return await ctx.reply(embed=embed_err("Tu n'es pas un utilisateur **Sys**."))
     if not member or not message:
         return await ctx.reply(embed=embed_err("Usage : `=mp @membre message`"))
     if not await protection_check(ctx, member): return
     try:
         await member.send(message)
-        e = embed_ok(f"Message envoye anonymement a {member.mention}.")
-        set_footer(e, ctx.author)
-        await ctx.reply(embed=e)
+        e = embed_ok(f"Message envoye anonymement a {member.mention}."); set_footer(e, ctx.author); await ctx.reply(embed=e)
     except discord.Forbidden:
         await ctx.reply(embed=embed_err("Impossible d'envoyer le MP (DMs fermes)."))
 
@@ -948,10 +827,9 @@ async def dog_add(i: discord.Interaction, membre: discord.Member):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Le bot est en **maintenance**."), ephemeral=True)
     if not has_server(i.user.id):
-        return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
     if not await protection_check_i(i, membre): return
-    oid = i.user.id
-    now = time.time()
+    oid = i.user.id; now = time.time()
     if oid in dog_active and dog_active[oid][0] == membre.id:
         return await i.response.send_message(embed=embed_warn("Cette personne est deja ton dog."), ephemeral=True)
     if oid in dog_active:
@@ -960,24 +838,20 @@ async def dog_add(i: discord.Interaction, membre: discord.Member):
         last = dog_cd.get(oid, 0)
         if now - last < 60:
             return await i.response.send_message(embed=embed_warn(f"Cooldown dog : encore **{int(60-(now-last))}s**."), ephemeral=True)
-    old = membre.display_name
-    new = f"{old} (🐕 de {i.user.display_name})"
+    old = membre.display_name; new = f"{old} (🐕 de {i.user.display_name})"
     try:
         await membre.edit(nick=new)
     except discord.Forbidden:
         return await i.response.send_message(embed=embed_err("Impossible de changer son pseudo."), ephemeral=True)
-    dog_active[oid] = (membre.id, new, old)
-    dog_cd[oid]     = now
-    e = embed_ok(f"**{membre.display_name}** est maintenant ton dog. 🐕")
-    set_footer(e, i.user)
-    await i.response.send_message(embed=e)
+    dog_active[oid] = (membre.id, new, old); dog_cd[oid] = now
+    e = embed_ok(f"**{membre.display_name}** est maintenant ton dog. 🐕"); set_footer(e, i.user); await i.response.send_message(embed=e)
 
 @tree.command(name="dog-del", description="Retirer le dog actif (Server WL)")
 async def dog_del(i: discord.Interaction):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Le bot est en **maintenance**."), ephemeral=True)
     if not has_server(i.user.id):
-        return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
     if i.user.id not in dog_active:
         return await i.response.send_message(embed=embed_err("Tu n'as pas de dog actif."), ephemeral=True)
     cid, new, old = dog_active.pop(i.user.id)
@@ -985,30 +859,21 @@ async def dog_del(i: discord.Interaction):
     if m:
         try: await m.edit(nick=old)
         except: pass
-    e = embed_warn("Dog retire avec succes.")
-    set_footer(e, i.user)
-    await i.response.send_message(embed=e)
+    e = embed_warn("Dog retire avec succes."); set_footer(e, i.user); await i.response.send_message(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
 #  /wakeup
 # ══════════════════════════════════════════════════════════════════════
 async def _run_wakeup(guild, target, invoker, custom_msg, duration):
-    spam_msg = (
-        f"{target.mention} {custom_msg}" if custom_msg
-        else f"Reveille toi {target.mention} ! C'est {invoker.mention} qui te l'ordonne 😈"
-    )
-    wakeup_active.add(target.id)
-    wakeup_cd[invoker.id] = time.time()
-    vcs   = list(guild.voice_channels)
-    delay = max(0.1, 1.0 / 3)
-
+    spam_msg = (f"{target.mention} {custom_msg}" if custom_msg else f"Reveille toi {target.mention} ! C'est {invoker.mention} qui te l'ordonne 😈")
+    wakeup_active.add(target.id); wakeup_cd[invoker.id] = time.time()
+    vcs = list(guild.voice_channels); delay = max(0.1, 1.0 / 3)
     async def spam_task():
         for _ in range(duration * 3):
             if target.id not in wakeup_active: break
             try: await target.send(spam_msg)
             except: pass
             await asyncio.sleep(delay)
-
     asyncio.create_task(spam_task())
     end = asyncio.get_event_loop().time() + duration
     while asyncio.get_event_loop().time() < end:
@@ -1032,15 +897,12 @@ class WakeupDurationSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Choisir la durée...", options=opts)
         self.target = target; self.invoker = invoker; self.custom_msg = custom_msg
-
     async def callback(self, i):
         if self.values[0] == "custom":
             return await i.response.send_modal(WakeupCustomDurationModal(self.target, self.invoker, self.custom_msg))
-        duration = int(self.values[0])
-        await i.response.defer(ephemeral=True)
+        duration = int(self.values[0]); await i.response.defer(ephemeral=True)
         e = discord.Embed(title="😈  Wakeup lancé !", description=f"**Cible :** {self.target.mention}\n**Durée :** `{duration}s`", color=C["orange"], timestamp=datetime.utcnow())
-        set_footer(e, self.invoker)
-        await i.followup.send(embed=e, ephemeral=True)
+        set_footer(e, self.invoker); await i.followup.send(embed=e, ephemeral=True)
         asyncio.create_task(_run_wakeup(i.guild, self.target, self.invoker, self.custom_msg, duration))
 
 class WakeupDurationView(discord.ui.View):
@@ -1059,8 +921,7 @@ class WakeupCustomDurationModal(discord.ui.Modal, title="Durée personnalisée")
             return await i.response.send_message(embed=embed_err("Durée invalide (5-600s)."), ephemeral=True)
         await i.response.defer(ephemeral=True)
         e = discord.Embed(title="😈  Wakeup lancé !", description=f"**Cible :** {self.target.mention}\n**Durée :** `{duration}s`", color=C["orange"], timestamp=datetime.utcnow())
-        set_footer(e, self.invoker)
-        await i.followup.send(embed=e, ephemeral=True)
+        set_footer(e, self.invoker); await i.followup.send(embed=e, ephemeral=True)
         asyncio.create_task(_run_wakeup(i.guild, self.target, self.invoker, self.custom_msg, duration))
 
 class WakeupModal(discord.ui.Modal, title="Wakeup"):
@@ -1092,7 +953,7 @@ async def wakeup_slash(i, membre: discord.Member):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
-        return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
     await i.response.send_modal(WakeupModal(membre, i.user))
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1103,10 +964,8 @@ class SnapResponseModal(discord.ui.Modal, title="Donner mon Snapchat"):
     def __init__(self, demandeur): super().__init__(); self.demandeur = demandeur
     async def on_submit(self, i):
         e = discord.Embed(title="📸  Snap recu !", color=C["warn"], timestamp=datetime.utcnow())
-        e.add_field(name="De", value=i.user.mention)
-        e.add_field(name="Snapchat", value=f"`{self.snap.value}`")
-        e.set_thumbnail(url=i.user.display_avatar.url)
-        set_footer(e)
+        e.add_field(name="De", value=i.user.mention); e.add_field(name="Snapchat", value=f"`{self.snap.value}`")
+        e.set_thumbnail(url=i.user.display_avatar.url); set_footer(e)
         try:
             await self.demandeur.send(embed=e)
             await i.response.send_message(embed=embed_ok("Snap envoye !"), ephemeral=True)
@@ -1124,7 +983,7 @@ async def snap_slash(i, membre: discord.Member, message: str = ""):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
-        return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
     e = discord.Embed(title="📸  Quelqu'un veut ton Snap !", color=C["warn"], timestamp=datetime.utcnow())
     e.set_author(name=i.user.display_name, icon_url=i.user.display_avatar.url)
     if message: e.add_field(name="Message", value=f"*{message}*", inline=False)
@@ -1144,21 +1003,18 @@ async def tipeu_slash(i, membre: discord.Member):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
-        return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
+        return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
     if not await protection_check_i(i, membre): return
     if membre.id in locked_nicks:
         locked_nicks.discard(membre.id)
         try: await membre.edit(nick=None)
         except: pass
-        e = embed_warn(f"Pseudo de {membre.mention} deverrouille.")
-        set_footer(e, i.user)
-        return await i.response.send_message(embed=e)
+        e = embed_warn(f"Pseudo de {membre.mention} deverrouille."); set_footer(e, i.user); return await i.response.send_message(embed=e)
     try:
         await membre.edit(nick="S")
         locked_nicks.add(membre.id)
         e = discord.Embed(title="🔒  Pseudo verrouille", description=f"{membre.mention} renomme **S** et verrouille.", color=C["info"], timestamp=datetime.utcnow())
-        set_footer(e, i.user)
-        await i.response.send_message(embed=e)
+        set_footer(e, i.user); await i.response.send_message(embed=e)
     except discord.Forbidden:
         await i.response.send_message(embed=embed_err("Impossible de changer son pseudo."), ephemeral=True)
 
@@ -1181,28 +1037,17 @@ async def help_cmd(ctx):
     if not e.fields:
         e.description = "> Tu n'as acces a aucune commande."
     e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
-#  &lock — lecture seule (voir le salon uniquement, aucun fil possible)
+#  &lock — lecture seule
 # ══════════════════════════════════════════════════════════════════════
-LOCK_DENY = discord.Permissions(
-    send_messages=True,
-    send_messages_in_threads=True,
-    create_public_threads=True,
-    create_private_threads=True,
-    add_reactions=True,
-    use_application_commands=True,
-)
-
 @bot.command(name="lock")
 @check_sys_plus()
 async def lock_cmd(ctx, channel: discord.TextChannel = None):
     channel  = channel or ctx.channel
     everyone = ctx.guild.default_role
 
-    # ── Déverrouillage ────────────────────────────────────────────────
     if channel.id in locked_channels:
         ow_before = locked_channels.pop(channel.id)
         if ow_before is None:
@@ -1210,14 +1055,11 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         else:
             await channel.set_permissions(everyone, overwrite=ow_before)
         e = embed_ok(title="Salon déverrouillé", desc=f"{channel.mention} est de nouveau accessible à tous.")
-        set_footer(e, ctx.author)
-        return await ctx.reply(embed=e)
+        set_footer(e, ctx.author); return await ctx.reply(embed=e)
 
-    # ── Verrouillage ──────────────────────────────────────────────────
     current = channel.overwrites_for(everyone)
     locked_channels[channel.id] = current if not current.is_empty() else None
 
-    # Tout refuser sauf view_channel
     locked_ow = discord.PermissionOverwrite(
         view_channel=True,
         send_messages=False,
@@ -1229,43 +1071,31 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     )
     await channel.set_permissions(everyone, overwrite=locked_ow)
 
-    # Sys+ peuvent tout faire
     for uid in SYS_PLUS_IDS:
         member = ctx.guild.get_member(uid)
         if member:
             await channel.set_permissions(member, send_messages=True,
                 send_messages_in_threads=True, create_public_threads=True,
-                create_private_threads=True, add_reactions=True,
-                use_application_commands=True)
+                create_private_threads=True, add_reactions=True, use_application_commands=True)
 
     e = discord.Embed(
         title="🔒  Salon verrouillé",
-        description=(
-            f"{channel.mention} est désormais **en lecture seule**.\n"
-            f"Seuls les **Sys+** peuvent écrire et créer des fils.\n\n"
-            f"Refais `&lock` pour déverrouiller."
-        ),
+        description=f"{channel.mention} est désormais **en lecture seule**.\nSeuls les **Sys+** peuvent écrire.\n\nRefais `&lock` pour déverrouiller.",
         color=C["maint"], timestamp=datetime.utcnow()
     )
-    set_footer(e, ctx.author)
-    await ctx.reply(embed=e)
+    set_footer(e, ctx.author); await ctx.reply(embed=e)
     if channel != ctx.channel:
         try:
-            await channel.send(embed=discord.Embed(
-                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.",
-                color=C["maint"]
-            ))
+            await channel.send(embed=discord.Embed(description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.", color=C["maint"]))
         except: pass
 
 # ══════════════════════════════════════════════════════════════════════
-#  &renew — Supprimer et recréer le salon identique (Sys+)
+#  &renew — Supprimer et recréer le salon
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="renew")
 @check_sys_plus()
 async def renew_cmd(ctx, channel: discord.TextChannel = None):
-    channel = channel or ctx.channel
-
-    # Sauvegarde des paramètres
+    channel    = channel or ctx.channel
     name       = channel.name
     topic      = channel.topic
     position   = channel.position
@@ -1277,18 +1107,11 @@ async def renew_cmd(ctx, channel: discord.TextChannel = None):
     await channel.delete(reason=f"&renew par {ctx.author}")
 
     new_ch = await ctx.guild.create_text_channel(
-        name=name,
-        topic=topic,
-        category=category,
-        slowmode_delay=slowmode,
-        nsfw=nsfw,
-        overwrites=overwrites,
+        name=name, topic=topic, category=category,
+        slowmode_delay=slowmode, nsfw=nsfw, overwrites=overwrites,
         reason=f"&renew par {ctx.author}"
     )
-
-    # Repositionner
-    try:
-        await new_ch.edit(position=position)
+    try: await new_ch.edit(position=position)
     except: pass
 
     e = embed_ok(title="Salon renouvelé", desc=f"{new_ch.mention} a été recréé proprement.")
