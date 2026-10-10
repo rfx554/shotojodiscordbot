@@ -1,1 +1,1 @@
-# shotojodiscordbotf
+# shotojodiscordbot
