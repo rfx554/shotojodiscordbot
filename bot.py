@@ -97,6 +97,7 @@ wakeup_cd      = {}
 dog_cd         = {}
 menotte_cd     = {}
 locked_nicks   = set()
+locked_channels = {}
 maintenance    = False
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1016,7 +1017,6 @@ async def dog_del(i: discord.Interaction):
 # ══════════════════════════════════════════════════════════════════════
 async def _run_wakeup(guild: discord.Guild, target: discord.Member, invoker: discord.Member,
                       custom_msg: str, duration: int):
-    """Lance le wakeup : spam DM ultra-rapide + déplacements toutes les 200ms."""
     spam_msg = (
         f"{target.mention} {custom_msg}" if custom_msg
         else f"Reveille toi {target.mention} ! C'est {invoker.mention} qui te l'ordonne 😈"
@@ -1024,9 +1024,9 @@ async def _run_wakeup(guild: discord.Guild, target: discord.Member, invoker: dis
     wakeup_active.add(target.id)
     wakeup_cd[invoker.id] = time.time()
 
-    vcs     = list(guild.voice_channels)
-    n_spam  = duration * 3          # ~3 msgs/s pendant toute la durée
-    delay   = max(0.1, 1.0 / 3)    # 1 msg toutes les 333ms
+    vcs    = list(guild.voice_channels)
+    n_spam = duration * 3
+    delay  = max(0.1, 1.0 / 3)
 
     async def spam_task():
         for _ in range(n_spam):
@@ -1047,7 +1047,7 @@ async def _run_wakeup(guild: discord.Guild, target: discord.Member, invoker: dis
                 await target.move_to(random.choice(vcs))
             except Exception:
                 pass
-        await asyncio.sleep(0.2)    # déplacement toutes les 200ms
+        await asyncio.sleep(0.2)
 
     try:
         await target.move_to(None)
@@ -1056,7 +1056,6 @@ async def _run_wakeup(guild: discord.Guild, target: discord.Member, invoker: dis
     wakeup_active.discard(target.id)
 
 
-# ── Sélecteur de durée (Sys+ uniquement) ─────────────────────────────
 class WakeupDurationSelect(discord.ui.Select):
     def __init__(self, target: discord.Member, invoker: discord.Member, custom_msg: str):
         opts = [
@@ -1142,7 +1141,6 @@ class WakeupCustomDurationModal(discord.ui.Modal, title="Durée personnalisée")
         )
 
 
-# ── Modal principal wakeup ────────────────────────────────────────────
 class WakeupModal(discord.ui.Modal, title="Wakeup"):
     message = discord.ui.TextInput(
         label="Message personnalise (optionnel)",
@@ -1174,7 +1172,6 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
         custom = self.message.value.strip()
 
         if is_sys_plus(self.invoker.id):
-            # Sys+ → choisir la durée
             e = discord.Embed(
                 title="⚡  Wakeup Sys+ — Durée",
                 description=(
@@ -1191,7 +1188,6 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
                 ephemeral=True
             )
         else:
-            # Normal → 10s directement
             await i.response.defer(ephemeral=True)
             e = embed_ok(f"Wakeup lance sur {self.target.mention} !")
             set_footer(e, self.invoker)
@@ -1333,26 +1329,21 @@ async def help_cmd(ctx):
     await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
-#  &lock — Verrouiller un salon (Sys+ uniquement)
+#  &lock — Verrouiller/Déverrouiller un salon (Sys+ uniquement)
 # ══════════════════════════════════════════════════════════════════════
-locked_channels = {}   # {channel_id: {role_id: overwrite_before}}
-
 @bot.command(name="lock")
 @check_sys_plus()
 async def lock_cmd(ctx, channel: discord.TextChannel = None):
     channel = channel or ctx.channel
+    everyone = ctx.guild.default_role
 
-    # ── Déverrouillage si déjà locké ──────────────────────────────────
+    # ── Déverrouillage ────────────────────────────────────────────────
     if channel.id in locked_channels:
-        saved = locked_channels.pop(channel.id)
-        for role_id, ow_before in saved.items():
-            role = ctx.guild.get_role(role_id)
-            if role is None:
-                continue
-            if ow_before is None:
-                await channel.set_permissions(role, overwrite=None)
-            else:
-                await channel.set_permissions(role, overwrite=ow_before)
+        ow_before = locked_channels.pop(channel.id)
+        if ow_before is None:
+            await channel.set_permissions(everyone, overwrite=None)
+        else:
+            await channel.set_permissions(everyone, overwrite=ow_before)
         e = embed_ok(
             title="Salon déverrouillé",
             desc=f"{channel.mention} est de nouveau accessible à tous."
@@ -1361,27 +1352,11 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         return await ctx.reply(embed=e)
 
     # ── Verrouillage ──────────────────────────────────────────────────
-    saved = {}
-    roles_to_lock = [
-        r for r in ctx.guild.roles
-        if r != ctx.guild.default_role and r.id not in SYS_PLUS_IDS
-        and not any(uid in SYS_PLUS_IDS for uid in [r.id])
-    ]
-    # On cible @everyone + tous les rôles non-Sys+
-    targets = [ctx.guild.default_role] + [
-        r for r in ctx.guild.roles if r.id not in SYS_PLUS_IDS
-    ]
+    current = channel.overwrites_for(everyone)
+    locked_channels[channel.id] = current if not current.is_empty() else None
 
-    for role in targets:
-        # Sauvegarde de l'overwrite actuel
-        current = channel.overwrites_for(role)
-        saved[role.id] = current if current.is_empty() is False else None
-        # Interdit l'envoi de messages
-        await channel.set_permissions(role, send_messages=False)
+    await channel.set_permissions(everyone, send_messages=False)
 
-    locked_channels[channel.id] = saved
-
-    # Autorise explicitement les Sys+ à parler
     for uid in SYS_PLUS_IDS:
         member = ctx.guild.get_member(uid)
         if member:
@@ -1399,7 +1374,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     )
     set_footer(e, ctx.author)
     await ctx.reply(embed=e)
-    # Annonce dans le salon locké (si c'est un autre salon)
     if channel != ctx.channel:
         try:
             await channel.send(embed=discord.Embed(
