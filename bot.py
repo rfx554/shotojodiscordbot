@@ -1604,27 +1604,54 @@ async def renew_cmd(ctx, channel: discord.TextChannel = None):
 
 # ══════════════════════════════════════════════════════════════════════
 #  &dmall
+#  Usage 1 : &dmall @user message          → DM tout le serveur
+#  Usage 2 : &dmall @user message @role    → DM uniquement les membres
+#             qui ont ce rôle
+#  Dans le message, @user est remplacé par le ping individuel de chaque
+#  destinataire.
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="dmall")
 @check_sys_plus()
 async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
     if not target or not message:
         return await ctx.reply(embed=embed_err(
-            "Usage : `&dmall @user message`\n"
-            "Le `@user` sera remplacé par la mention de chaque personne qui reçoit le DM."
+            "Usage : `&dmall @user message [@role]`\n"
+            "> `@user` → remplacé par le ping de chaque destinataire\n"
+            "> `@role` *(optionnel)* → envoie uniquement aux membres qui ont ce rôle"
         ))
 
-    members = [m for m in ctx.guild.members if not m.bot]
+    # ── Détecter si le message se termine par un ID de rôle ──────
+    role_filter: discord.Role | None = None
+    words = message.split()
+    if words and words[-1].isdigit() and len(words[-1]) >= 17:
+        role_filter = ctx.guild.get_role(int(words[-1]))
+        if role_filter:
+            message = " ".join(words[:-1]).strip()  # retirer l'ID du message
+
+    # ── Construire la liste des destinataires ──────────────────────
+    if role_filter:
+        members = [m for m in role_filter.members if not m.bot]
+        scope_txt = f"les membres avec le rôle {role_filter.mention}"
+    else:
+        members = [m for m in ctx.guild.members if not m.bot]
+        scope_txt = "tous les membres du serveur"
+
+    if not members:
+        return await ctx.reply(embed=embed_warn("Aucun membre trouvé pour cet envoi."))
+
+    # ── Embed de confirmation ──────────────────────────────────────
     confirm_e = discord.Embed(
-        title="📨  Confirmer l'envoi global",
+        title="📨  Confirmer l'envoi",
         description=(
-            f"Tu vas envoyer un DM à **{len(members)}** membres.\n\n"
+            f"Tu vas envoyer un DM à **{len(members)}** membres ({scope_txt}).\n\n"
             f"**Message :**\n> {message[:300]}\n\n"
             f"**`@user` remplacé par :** mention individuelle de chaque destinataire\n\n"
             "Clique **Confirmer** pour lancer l'envoi."
         ),
         color=C["warn"], timestamp=datetime.utcnow()
     )
+    if role_filter:
+        confirm_e.add_field(name="🎭 Rôle ciblé", value=role_filter.mention, inline=True)
     set_footer(confirm_e, ctx.author)
 
     class ConfirmView(discord.ui.View):
@@ -1656,6 +1683,7 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
     if not view.confirmed:
         return await confirm_msg.edit(embed=embed_warn("Envoi annulé."), view=None)
 
+    # ── Envoi ──────────────────────────────────────────────────────
     target_mention = target.mention
 
     progress_e = discord.Embed(
@@ -1684,6 +1712,8 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
     )
     result_e.add_field(name="✅ Envoyés",  value=f"`{ok_count}`",   inline=True)
     result_e.add_field(name="❌ Échoués", value=f"`{fail_count}`",  inline=True)
+    if role_filter:
+        result_e.add_field(name="🎭 Rôle ciblé", value=role_filter.mention, inline=True)
     result_e.add_field(name="📝 Message", value=f"```{message[:200]}```", inline=False)
     set_footer(result_e, ctx.author)
     await progress_msg.edit(embed=result_e)
@@ -1693,6 +1723,7 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
         "DM Global envoyé",
         [
             ("⌨️ Commande",   "`&dmall`"),
+            ("🎯 Scope",      role_filter.mention if role_filter else "*Tout le serveur*"),
             ("✅ Envoyés",    f"`{ok_count}`"),
             ("❌ Échoués",    f"`{fail_count}`"),
             ("📝 Message",    f"```{message[:200]}```", False),
