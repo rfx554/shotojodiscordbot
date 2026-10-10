@@ -421,10 +421,9 @@ def build_wlpanel_embed(guild):
     sys_p      = set()
     priv_p     = set()
 
-    # Sys+ comptés dans toutes les catégories
+    # Sys+ toujours comptés (même s'ils ne sont pas dans le cache du guild)
     for uid in SYS_PLUS_IDS:
-        if guild.get_member(uid):
-            voicevip_p.add(uid); server_p.add(uid); sys_p.add(uid)
+        voicevip_p.add(uid); server_p.add(uid); sys_p.add(uid)
 
     for uid, wls in whitelisted.items():
         if "voicevip"  in wls: voicevip_p.add(uid)
@@ -685,8 +684,24 @@ async def pvsys_cmd(ctx):
         description=f"🔒 **{ctx.author.voice.channel.name}** est maintenant en **PV Sys** (les autres WL Sys peuvent entrer, pas les VoiceVIP normaux).", color=0x5865F2))
 
 # ════════════════════════════════════════════════════════════════
-#  COMMANDES SERVER (/slash)
+#  COMMANDES SERVER (= et /slash)
 # ════════════════════════════════════════════════════════════════
+
+# =mp (Server WL)
+@bot.command(name="mp")
+async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
+    if not has_server(ctx.author.id):
+        return await ctx.reply(embed=discord.Embed(description="❌ Tu n'as pas la **Server WL**.", color=0xFF0000))
+    if not member or not message:
+        return await ctx.reply(embed=discord.Embed(description="❌ `=mp @membre message`", color=0xFF0000))
+    if not await protection_check(ctx, member): return
+    embed = discord.Embed(description=message, color=0x5865F2)
+    embed.set_footer(text=f"Message de {ctx.author.display_name}")
+    try:
+        await member.send(embed=embed)
+        await ctx.reply(embed=discord.Embed(description=f"✅ Message envoyé à {member.mention}.", color=0x00FF7F))
+    except discord.Forbidden:
+        await ctx.reply(embed=discord.Embed(description="❌ Impossible d'envoyer le MP (DMs fermés).", color=0xFF0000))
 
 # /dog-add et /dog-del
 @tree.command(name="dog-add", description="Dog quelqu'un — le suit partout en voc (Server WL)")
@@ -743,7 +758,11 @@ class WakeupModal(discord.ui.Modal, title="Message de wakeup"):
                 return await i.response.send_message(f"⏳ Cooldown : encore **{int(300-(now-last))}s**.", ephemeral=True)
         if self.target.id in wakeup_active:
             return await i.response.send_message("❌ Déjà en wakeup.", ephemeral=True)
-        full_msg = f"{self.message.value}\n— c'est {self.invoker.mention} qui te l'ordonne !"
+        wakeup_embed = discord.Embed(
+            title="⏰ WAKEUP",
+            description=self.message.value,
+            color=0xFF4500)
+        wakeup_embed.set_footer(text=f"Ordonné par {self.invoker.display_name}")
         wakeup_active.add(self.target.id)
         wakeup_cd[self.invoker.id] = now
         await i.response.send_message(f"✅ Wakeup lancé sur {self.target.mention} pendant **10 secondes** !", ephemeral=True)
@@ -751,7 +770,7 @@ class WakeupModal(discord.ui.Modal, title="Message de wakeup"):
             end = asyncio.get_event_loop().time() + 10
             async def spam():
                 for _ in range(20):
-                    try: await self.target.send(full_msg)
+                    try: await self.target.send(embed=wakeup_embed)
                     except: pass
                     await asyncio.sleep(0.5)
             asyncio.create_task(spam())
@@ -858,7 +877,7 @@ async def help_cmd(ctx):
     if has_wl_sys(ctx.author.id):
         embed.add_field(name="⚡ WL Sys (=)", value="`=follow` `=pvsys` + toutes les commandes VoiceVIP", inline=False)
     if has_server(ctx.author.id):
-        embed.add_field(name="🌐 Server (/)", value="`/dog-add` `/dog-del` `/wakeup` `/snap` `/tipeu`", inline=False)
+        embed.add_field(name="🌐 Server (= et /)", value="`=mp @m message` `/dog-add` `/dog-del` `/wakeup` `/snap` `/tipeu`", inline=False)
     if not embed.fields:
         embed.description = "Tu n'as accès à aucune commande."
     embed.set_footer(text="Refais la même commande pour toggle • Sys+ = invulnérables")
