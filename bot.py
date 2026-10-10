@@ -185,5 +185,4 @@ async def help_cmd(ctx):
 
 # ── Lancement ──────────────────────────────────────────────────
 # Remplace TON_TOKEN par le token de ton bot
-import os
-bot.run(os.environ["MTU1ODI2MzE1MTYzNDU0Njc1MA.GOg_Lf.xGAub1OfGNYChKh4IZxDv6mYfFTI0w2SqNfEes"])
+bot.run(os.environ["TOKEN"])
