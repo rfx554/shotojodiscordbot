@@ -450,6 +450,13 @@ class WLRemoveSelect(discord.ui.Select):
             save_wl()
         m = self.guild.get_member(uid)
         await i.response.send_message(f"✅ WL **{wl}** retirée à **{m.display_name if m else uid}**.", ephemeral=True)
+        if m:
+            try:
+                await m.send(embed=discord.Embed(
+                    title="❌ Whitelist retirée",
+                    description=f"Ta **{wl}** t'a été retirée sur **{i.guild.name}**.",
+                    color=0xFF0000))
+            except: pass
 
 class VoiceVIPMainPanel(discord.ui.View):
     def __init__(self, guild): super().__init__(timeout=120); self.guild = guild
@@ -555,6 +562,85 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
         await member.send(embed=discord.Embed(title="⚠️ Derank",
             description=f"Tous tes rôles ont été retirés sur **{ctx.guild.name}**.\nRaison : {reason}", color=0xFF4500))
     except: pass
+
+# ════════════════════════════════════════════════════════════════
+#  /addrole — Ajouter un rôle (Sys+)
+# ════════════════════════════════════════════════════════════════
+@tree.command(name="addrole", description="Ajouter un rôle à un membre ou à tout le serveur (Sys+)")
+@app_commands.describe(
+    role="Le rôle à ajouter",
+    tous="Ajouter à tous les membres du serveur ?",
+    membre="Le membre cible (ignoré si 'tous' est activé)"
+)
+async def addrole_slash(
+    i: discord.Interaction,
+    role: discord.Role,
+    tous: bool,
+    membre: discord.Member = None
+):
+    if not is_sys_plus(i.user.id):
+        return await i.response.send_message(
+            embed=discord.Embed(description="❌ Réservé aux **Sys+**.", color=0xFF0000),
+            ephemeral=True
+        )
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
+
+    # Vérif hiérarchie du rôle
+    if role >= i.guild.me.top_role:
+        return await i.response.send_message(
+            embed=discord.Embed(description="❌ Ce rôle est trop haut pour moi.", color=0xFF0000),
+            ephemeral=True
+        )
+
+    if tous:
+        await i.response.defer(thinking=True)
+        members = [m for m in i.guild.members if not m.bot and role not in m.roles]
+        ok, fail = 0, 0
+        for m in members:
+            try:
+                await m.add_roles(role, reason=f"/addrole tous — par {i.user}")
+                ok += 1
+            except:
+                fail += 1
+        embed = discord.Embed(
+            title="✅ Rôle ajouté — Tous les membres",
+            color=0x00FF7F
+        )
+        embed.add_field(name="Rôle", value=role.mention, inline=True)
+        embed.add_field(name="Réussi", value=str(ok), inline=True)
+        embed.add_field(name="Échoué", value=str(fail), inline=True)
+        embed.set_footer(text=f"Par {i.user.display_name}")
+        await i.followup.send(embed=embed)
+
+    else:
+        if not membre:
+            return await i.response.send_message(
+                embed=discord.Embed(description="❌ Précise un membre ou active **tous**.", color=0xFF0000),
+                ephemeral=True
+            )
+        if not await protection_check_i(i, membre):
+            return
+        if role in membre.roles:
+            return await i.response.send_message(
+                embed=discord.Embed(description=f"⚠️ {membre.mention} a déjà ce rôle.", color=0xFFA500),
+                ephemeral=True
+            )
+        try:
+            await membre.add_roles(role, reason=f"/addrole — par {i.user}")
+            embed = discord.Embed(
+                title="✅ Rôle ajouté",
+                color=0x00FF7F
+            )
+            embed.add_field(name="Membre", value=membre.mention, inline=True)
+            embed.add_field(name="Rôle", value=role.mention, inline=True)
+            embed.set_footer(text=f"Par {i.user.display_name}")
+            await i.response.send_message(embed=embed)
+        except discord.Forbidden:
+            await i.response.send_message(
+                embed=discord.Embed(description="❌ Impossible d'ajouter ce rôle.", color=0xFF0000),
+                ephemeral=True
+            )
 
 # ════════════════════════════════════════════════════════════════
 #  COMMANDES VOICEVIP (=)
@@ -914,7 +1000,7 @@ async def help_cmd(ctx):
     if maintenance:
         embed.description = "🔧 **Le bot est en maintenance.** Seuls les Sys+ peuvent utiliser les commandes."
     if is_sys_plus(ctx.author.id):
-        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&wlpanel` `&restartpanel` `&maintenance` `&clear` `&derank`\n*+ toutes les commandes `=` et `/`*", inline=False)
+        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&wlpanel` `&restartpanel` `&maintenance` `&clear` `&derank` `/addrole`\n*+ toutes les commandes `=` et `/`*", inline=False)
     if has_voicevip(ctx.author.id):
         embed.add_field(name="🎤 VoiceVIP (=)", value="`=laisse` `=pv` `=acces` `=join` `=mv` `=pvlist` `=menotte`", inline=False)
     if has_wl_sys(ctx.author.id):
