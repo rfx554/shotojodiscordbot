@@ -143,6 +143,19 @@ def check_sys_plus():
         return True
     return commands.check(pred)
 
+# ── NEW ──────────────────────────────────────────────────────────────
+def check_server():
+    async def pred(ctx):
+        if maintenance and not is_sys_plus(ctx.author.id):
+            await ctx.reply(embed=embed_warn("Le bot est en **maintenance**. Reviens plus tard."))
+            return False
+        if not has_server(ctx.author.id):
+            await ctx.reply(embed=embed_err("Tu n'es pas un utilisateur **Server**."))
+            return False
+        return True
+    return commands.check(pred)
+# ─────────────────────────────────────────────────────────────────────
+
 def check_voicevip():
     async def pred(ctx):
         if maintenance and not is_sys_plus(ctx.author.id):
@@ -644,8 +657,10 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
 # ══════════════════════════════════════════════════════════════════════
 #  COMMANDES VOICEVIP (=)
 # ══════════════════════════════════════════════════════════════════════
+
+# ── =laisse est maintenant sous Server WL ────────────────────────────
 @bot.command(name="laisse")
-@check_voicevip()
+@check_server()
 async def laisse_cmd(ctx, member: discord.Member = None):
     if not member:
         return await ctx.reply(embed=embed_err("Usage : `=laisse @membre`"))
@@ -680,8 +695,8 @@ async def pv_cmd(ctx):
     if cid in private_vocs and private_vocs[cid]["owner"] == ctx.author.id:
         private_vocs.pop(cid); pv_access.pop(cid, None)
         e = embed_ok("Vocal rendue **publique**."); set_footer(e, ctx.author); return await ctx.reply(embed=e)
-    user_pvs = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
-    max_pvs  = 99 if is_sys_plus(ctx.author.id) else 2
+    user_pvs  = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
+    max_pvs   = 99 if is_sys_plus(ctx.author.id) else 2
     if len(user_pvs) >= max_pvs:
         return await ctx.reply(embed=embed_err(f"Tu as deja **{max_pvs}** vocal(s) privee(s) max."))
     pv_type = "sysplus" if is_sys_plus(ctx.author.id) else ("sys" if has_wl_sys(ctx.author.id) else "normal")
@@ -957,42 +972,96 @@ async def wakeup_slash(i, membre: discord.Member):
     await i.response.send_modal(WakeupModal(membre, i.user))
 
 # ══════════════════════════════════════════════════════════════════════
-#  /snap
+#  /snap  — FIXED + bouton Refuser
 # ══════════════════════════════════════════════════════════════════════
 class SnapResponseModal(discord.ui.Modal, title="Donner mon Snapchat"):
     snap = discord.ui.TextInput(label="Ton Snapchat", placeholder="ton_snap", max_length=50)
-    def __init__(self, demandeur): super().__init__(); self.demandeur = demandeur
-    async def on_submit(self, i):
+
+    def __init__(self, demandeur: discord.Member, view: "SnapView"):
+        super().__init__()
+        self.demandeur = demandeur
+        self._parent_view = view
+
+    async def on_submit(self, i: discord.Interaction):
         e = discord.Embed(title="📸  Snap recu !", color=C["warn"], timestamp=datetime.utcnow())
-        e.add_field(name="De", value=i.user.mention); e.add_field(name="Snapchat", value=f"`{self.snap.value}`")
-        e.set_thumbnail(url=i.user.display_avatar.url); set_footer(e)
+        e.add_field(name="De",       value=i.user.mention)
+        e.add_field(name="Snapchat", value=f"`{self.snap.value}`")
+        e.set_thumbnail(url=i.user.display_avatar.url)
+        set_footer(e)
         try:
             await self.demandeur.send(embed=e)
-            await i.response.send_message(embed=embed_ok("Snap envoye !"), ephemeral=True)
-        except:
-            await i.response.send_message(embed=embed_err("DMs fermes."), ephemeral=True)
+            await i.response.send_message(embed=embed_ok("Snap envoyé ! 📸"), ephemeral=True)
+            # Désactiver les boutons après usage
+            self._parent_view.disable_all()
+            try: await self._parent_view.message.edit(view=self._parent_view)
+            except: pass
+        except discord.Forbidden:
+            await i.response.send_message(embed=embed_err("DMs fermés, impossible d'envoyer."), ephemeral=True)
+
 
 class SnapView(discord.ui.View):
-    def __init__(self, demandeur): super().__init__(timeout=300); self.demandeur = demandeur
-    @discord.ui.button(label="📸  Donner mon Snap", style=discord.ButtonStyle.blurple)
-    async def give_snap(self, i, b): await i.response.send_modal(SnapResponseModal(self.demandeur))
+    def __init__(self, demandeur: discord.Member):
+        super().__init__(timeout=300)
+        self.demandeur = demandeur
+        self.message: discord.Message | None = None  # sera assigné après l'envoi
+
+    def disable_all(self):
+        for item in self.children:
+            item.disabled = True
+
+    @discord.ui.button(label="📸  Donner mon Snap", style=discord.ButtonStyle.blurple, custom_id="snap_give")
+    async def give_snap(self, i: discord.Interaction, b: discord.ui.Button):
+        await i.response.send_modal(SnapResponseModal(self.demandeur, self))
+
+    @discord.ui.button(label="❌  Refuser", style=discord.ButtonStyle.red, custom_id="snap_refuse")
+    async def refuse_snap(self, i: discord.Interaction, b: discord.ui.Button):
+        # Notifier le demandeur
+        try:
+            e = discord.Embed(
+                title="💀  Snap refusé",
+                description=(
+                    f"La honte, elle a refusé de te passer son Snap. 😂💀\n"
+                    f"*(refus de **{i.user.display_name}**)*"
+                ),
+                color=C["error"],
+                timestamp=datetime.utcnow()
+            )
+            set_footer(e)
+            await self.demandeur.send(embed=e)
+        except discord.Forbidden:
+            pass  # DMs fermés du demandeur, tant pis
+
+        # Confirmer à celui qui refuse
+        await i.response.send_message(embed=embed_ok("Refus envoyé. 👍"), ephemeral=True)
+
+        # Désactiver les boutons
+        self.disable_all()
+        try: await self.message.edit(view=self)
+        except: pass
+        self.stop()
+
 
 @tree.command(name="snap", description="Demander le snap de quelqu'un (Server WL)")
 @app_commands.describe(membre="La personne", message="Ton message (optionnel)")
-async def snap_slash(i, membre: discord.Member, message: str = ""):
+async def snap_slash(i: discord.Interaction, membre: discord.Member, message: str = ""):
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message(embed=embed_err("Tu n'es pas un utilisateur **Sys**."), ephemeral=True)
+
     e = discord.Embed(title="📸  Quelqu'un veut ton Snap !", color=C["warn"], timestamp=datetime.utcnow())
     e.set_author(name=i.user.display_name, icon_url=i.user.display_avatar.url)
-    if message: e.add_field(name="Message", value=f"*{message}*", inline=False)
-    e.set_footer(text="Clique si tu veux partager ton snap.")
+    if message:
+        e.add_field(name="Message", value=f"*{message}*", inline=False)
+    e.set_footer(text="Clique si tu veux partager ton snap — ou refuse directement.")
+
+    view = SnapView(i.user)
     try:
-        await membre.send(embed=e, view=SnapView(i.user))
-        await i.response.send_message(embed=embed_ok(f"Demande envoyee a {membre.mention} !"), ephemeral=True)
-    except:
-        await i.response.send_message(embed=embed_err("DMs fermes."), ephemeral=True)
+        sent = await membre.send(embed=e, view=view)
+        view.message = sent          # on stocke la ref pour pouvoir désactiver les boutons
+        await i.response.send_message(embed=embed_ok(f"Demande envoyée à {membre.mention} ! 📨"), ephemeral=True)
+    except discord.Forbidden:
+        await i.response.send_message(embed=embed_err("Impossible d'envoyer le MP (DMs fermés)."), ephemeral=True)
 
 # ══════════════════════════════════════════════════════════════════════
 #  /tipeu
@@ -1029,11 +1098,11 @@ async def help_cmd(ctx):
     if is_sys_plus(ctx.author.id):
         e.add_field(name="⭐  Sys+  [ & ]", value="`&wl`  `&wlpanel`  `&lock`  `&renew`  `&restartpanel`  `&maintenance`  `&clear`  `&derank`\n`/addrole`  `/removerole`\n*+ toutes les commandes = et /*", inline=False)
     if has_voicevip(ctx.author.id):
-        e.add_field(name="🎤  VoiceVIP  [ = ]", value="`=laisse`  `=pv`  `=acces`  `=join`  `=mv`  `=pvlist`  `=menotte`", inline=False)
+        e.add_field(name="🎤  VoiceVIP  [ = ]", value="`=pv`  `=acces`  `=join`  `=mv`  `=pvlist`  `=menotte`", inline=False)
     if has_wl_sys(ctx.author.id):
         e.add_field(name="⚡  WL Sys  [ = ]", value="`=follow`  `=pvsys`  *(+ toutes les commandes VoiceVIP)*", inline=False)
     if has_server(ctx.author.id):
-        e.add_field(name="🌐  Server  [ = / ]", value="`=mp`  `/dog-add`  `/dog-del`  `/wakeup`  `/snap`  `/tipeu`", inline=False)
+        e.add_field(name="🌐  Server  [ = / ]", value="`=laisse`  `=mp`  `/dog-add`  `/dog-del`  `/wakeup`  `/snap`  `/tipeu`", inline=False)
     if not e.fields:
         e.description = "> Tu n'as acces a aucune commande."
     e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
