@@ -239,7 +239,7 @@ async def on_voice_state_update(member, before, after):
             pv_access.pop(ch_id, None)
 
 # ════════════════════════════════════════════════════════════════
-#  &maintenance — Sys+ uniquement
+#  &maintenance - Sys+ uniquement
 # ════════════════════════════════════════════════════════════════
 @bot.command(name="maintenance")
 @check_sys_plus()
@@ -270,7 +270,7 @@ async def maintenance_cmd(ctx):
             color=0x00FF7F))
 
 # ════════════════════════════════════════════════════════════════
-#  &wl — Panel whitelist (Sys+)
+#  &wl - Panel whitelist (Sys+)
 # ════════════════════════════════════════════════════════════════
 class WLView(discord.ui.View):
     def __init__(self, target: discord.Member, invoker_id: int):
@@ -316,13 +316,13 @@ async def wl_cmd(ctx, member: discord.Member = None):
     if not member:
         return await ctx.reply(embed=discord.Embed(description="❌ `&wl @membre`", color=0xFF0000))
     wls = whitelisted.get(member.id, [])
-    embed = discord.Embed(title=f"📋 Whitelist — {member.display_name}", color=0x5865F2)
+    embed = discord.Embed(title=f"📋 Whitelist - {member.display_name}", color=0x5865F2)
     embed.add_field(name="WL actuelles", value=", ".join(wls) if wls else "Aucune")
     embed.set_thumbnail(url=member.display_avatar.url)
     await ctx.reply(embed=embed, view=WLView(member, ctx.author.id))
 
 # ════════════════════════════════════════════════════════════════
-#  &voicevip — Panel gestion (Sys+)
+#  &voicevip - Panel gestion (Sys+)
 # ════════════════════════════════════════════════════════════════
 class PVSubPanel(discord.ui.View):
     def __init__(self, guild): super().__init__(timeout=60); self.guild = guild
@@ -345,7 +345,7 @@ class PVSubPanel(discord.ui.View):
         for cid, info in private_vocs.items():
             ch = self.guild.get_channel(cid)
             ow = self.guild.get_member(info["owner"])
-            lines.append(f"**#{ch.name if ch else cid}** [{info['type']}] — {ow.display_name if ow else info['owner']}")
+            lines.append(f"**#{ch.name if ch else cid}** [{info['type']}] - {ow.display_name if ow else info['owner']}")
         await i.response.send_message("\n".join(lines), ephemeral=True)
 
 class PVRemoveSelect(discord.ui.Select):
@@ -425,7 +425,7 @@ class WLSubPanel(discord.ui.View):
         for uid, wls in whitelisted.items():
             m = self.guild.get_member(uid)
             for wl in wls:
-                opts.append(discord.SelectOption(label=f"{m.display_name if m else uid} — {wl}", value=f"{uid}:{wl}"))
+                opts.append(discord.SelectOption(label=f"{m.display_name if m else uid} - {wl}", value=f"{uid}:{wl}"))
         v = discord.ui.View(); v.add_item(WLRemoveSelect(opts, self.guild))
         await i.response.send_message("Choisis :", view=v, ephemeral=True)
 
@@ -498,7 +498,7 @@ def build_wlpanel_embed(guild):
         if "privilege" in wls: priv_p.add(uid)
 
     status = "🔧 **EN MAINTENANCE**" if maintenance else "✅ Opérationnel"
-    embed = discord.Embed(title="🎛️ Panel WL — Sys+", color=0xFFA500 if maintenance else 0x5865F2)
+    embed = discord.Embed(title="🎛️ Panel WL - Sys+", color=0xFFA500 if maintenance else 0x5865F2)
     embed.add_field(name="🤖 Statut bot",             value=status,                              inline=False)
     embed.add_field(name="🎤 VoiceVIP",               value=f"**{len(voicevip_p)}** personne(s)", inline=True)
     embed.add_field(name="🌐 Server",                  value=f"**{len(server_p)}** personne(s)",  inline=True)
@@ -520,7 +520,7 @@ async def wlpanel_cmd(ctx):
 @check_sys_plus()
 async def restartpanel_cmd(ctx):
     embed = build_wlpanel_embed(ctx.guild)
-    embed.title = "🔄 Panel WL — Redémarré"
+    embed.title = "🔄 Panel WL - Redémarré"
     await ctx.reply(embed=embed, view=VoiceVIPMainPanel(ctx.guild))
 
 # ════════════════════════════════════════════════════════════════
@@ -552,7 +552,7 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
     roles = [r for r in member.roles if r != ctx.guild.default_role and r < ctx.guild.me.top_role]
     if not roles:
         return await ctx.reply(embed=discord.Embed(description=f"⚠️ {member.mention} n'a aucun rôle.", color=0xFFA500))
-    await member.remove_roles(*roles, reason=f"Derank par {ctx.author} — {reason}")
+    await member.remove_roles(*roles, reason=f"Derank par {ctx.author} - {reason}")
     embed = discord.Embed(title="🔨 Derank effectué", color=0xFF4500)
     embed.add_field(name="Membre", value=f"{member.mention}", inline=True)
     embed.add_field(name="Par", value=ctx.author.mention, inline=True)
@@ -564,7 +564,7 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
     except: pass
 
 # ════════════════════════════════════════════════════════════════
-#  /addrole — Ajouter un rôle (Sys+)
+#  /addrole - Ajouter un rôle (Sys+)
 # ════════════════════════════════════════════════════════════════
 @tree.command(name="addrole", description="Ajouter un rôle à un membre ou à tout le serveur (Sys+)")
 @app_commands.describe(
@@ -599,12 +599,12 @@ async def addrole_slash(
         ok, fail = 0, 0
         for m in members:
             try:
-                await m.add_roles(role, reason=f"/addrole tous — par {i.user}")
+                await m.add_roles(role, reason=f"/addrole tous - par {i.user}")
                 ok += 1
             except:
                 fail += 1
         embed = discord.Embed(
-            title="✅ Rôle ajouté — Tous les membres",
+            title="✅ Rôle ajouté - Tous les membres",
             color=0x00FF7F
         )
         embed.add_field(name="Rôle", value=role.mention, inline=True)
@@ -627,7 +627,7 @@ async def addrole_slash(
                 ephemeral=True
             )
         try:
-            await membre.add_roles(role, reason=f"/addrole — par {i.user}")
+            await membre.add_roles(role, reason=f"/addrole - par {i.user}")
             embed = discord.Embed(
                 title="✅ Rôle ajouté",
                 color=0x00FF7F
@@ -639,6 +639,84 @@ async def addrole_slash(
         except discord.Forbidden:
             await i.response.send_message(
                 embed=discord.Embed(description="❌ Impossible d'ajouter ce rôle.", color=0xFF0000),
+                ephemeral=True
+            )
+
+# ════════════════════════════════════════════════════════════════
+#  /removerole - Retirer un rôle (Sys+)
+# ════════════════════════════════════════════════════════════════
+@tree.command(name="removerole", description="Retirer un rôle à un membre ou à tout le serveur (Sys+)")
+@app_commands.describe(
+    role="Le rôle à retirer",
+    tous="Retirer à tous les membres du serveur ?",
+    membre="Le membre cible (ignoré si 'tous' est activé)"
+)
+async def removerole_slash(
+    i: discord.Interaction,
+    role: discord.Role,
+    tous: bool,
+    membre: discord.Member = None
+):
+    if not is_sys_plus(i.user.id):
+        return await i.response.send_message(
+            embed=discord.Embed(description="❌ Réservé aux **Sys+**.", color=0xFF0000),
+            ephemeral=True
+        )
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
+
+    if role >= i.guild.me.top_role:
+        return await i.response.send_message(
+            embed=discord.Embed(description="❌ Ce rôle est trop haut pour moi.", color=0xFF0000),
+            ephemeral=True
+        )
+
+    if tous:
+        await i.response.defer(thinking=True)
+        members = [m for m in i.guild.members if not m.bot and role in m.roles]
+        ok, fail = 0, 0
+        for m in members:
+            try:
+                await m.remove_roles(role, reason=f"/removerole tous - par {i.user}")
+                ok += 1
+            except:
+                fail += 1
+        embed = discord.Embed(
+            title="✅ Rôle retiré - Tous les membres",
+            color=0xFF4500
+        )
+        embed.add_field(name="Rôle", value=role.mention, inline=True)
+        embed.add_field(name="Réussi", value=str(ok), inline=True)
+        embed.add_field(name="Échoué", value=str(fail), inline=True)
+        embed.set_footer(text=f"Par {i.user.display_name}")
+        await i.followup.send(embed=embed)
+
+    else:
+        if not membre:
+            return await i.response.send_message(
+                embed=discord.Embed(description="❌ Précise un membre ou active **tous**.", color=0xFF0000),
+                ephemeral=True
+            )
+        if not await protection_check_i(i, membre):
+            return
+        if role not in membre.roles:
+            return await i.response.send_message(
+                embed=discord.Embed(description=f"⚠️ {membre.mention} n'a pas ce rôle.", color=0xFFA500),
+                ephemeral=True
+            )
+        try:
+            await membre.remove_roles(role, reason=f"/removerole - par {i.user}")
+            embed = discord.Embed(
+                title="✅ Rôle retiré",
+                color=0xFF4500
+            )
+            embed.add_field(name="Membre", value=membre.mention, inline=True)
+            embed.add_field(name="Rôle", value=role.mention, inline=True)
+            embed.set_footer(text=f"Par {i.user.display_name}")
+            await i.response.send_message(embed=embed)
+        except discord.Forbidden:
+            await i.response.send_message(
+                embed=discord.Embed(description="❌ Impossible de retirer ce rôle.", color=0xFF0000),
                 ephemeral=True
             )
 
@@ -834,7 +912,7 @@ async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
     except discord.Forbidden:
         await ctx.reply(embed=discord.Embed(description="❌ Impossible d'envoyer le MP (DMs fermés).", color=0xFF0000))
 
-@tree.command(name="dog-add", description="Dog quelqu'un — le suit partout en voc (Server WL)")
+@tree.command(name="dog-add", description="Dog quelqu'un - le suit partout en voc (Server WL)")
 @app_commands.describe(membre="La personne à dog")
 async def dog_add(i: discord.Interaction, membre: discord.Member):
     if maintenance and not is_sys_plus(i.user.id):
