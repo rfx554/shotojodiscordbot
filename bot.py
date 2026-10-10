@@ -720,8 +720,10 @@ async def dog_add(i: discord.Interaction, membre: discord.Member):
             return await i.response.send_message(f"⏳ Cooldown dog : encore **{int(60-(now-last))}s**.", ephemeral=True)
     old = membre.display_name
     new = f"{old}(🐕de {i.user.display_name})"
-    try: await membre.edit(nick=new)
-    except: pass
+    try:
+        await membre.edit(nick=new)
+    except discord.Forbidden:
+        return await i.response.send_message("❌ Impossible de changer le pseudo (permissions insuffisantes).", ephemeral=True)
     dog_active[oid] = (membre.id, new, old)
     dog_cd[oid] = now
     await i.response.send_message(embed=discord.Embed(
