@@ -1,4 +1,5 @@
 import os
+import json
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -16,10 +17,25 @@ SYS_PLUS_IDS = {
     1514099294611701842,
 }
 
+WL_FILE = "whitelisted.json"
+
+def load_wl():
+    if os.path.exists(WL_FILE):
+        try:
+            with open(WL_FILE, "r") as f:
+                data = json.load(f)
+                return {int(k): v for k, v in data.items()}
+        except: pass
+    return {}
+
+def save_wl():
+    with open(WL_FILE, "w") as f:
+        json.dump({str(k): v for k, v in whitelisted.items()}, f)
+
 # ════════════════════════════════════════════════════════════════
 #  STOCKAGE MÉMOIRE
 # ════════════════════════════════════════════════════════════════
-whitelisted   = {}   # uid -> ["voicevip","server","sys","privilege"]
+whitelisted   = load_wl()   # uid -> ["voicevip","server","sys","privilege"]
 private_vocs  = {}   # channel_id -> {"owner": uid, "type": "normal"|"sys"|"sysplus"}
 pv_access     = {}   # channel_id -> set(uid)
 follow_active = {}   # follower_id -> target_id
@@ -230,6 +246,7 @@ class WLView(discord.ui.View):
         if wl in lst:
             return await i.response.send_message(f"⚠️ Déjà **{label}**.", ephemeral=True)
         lst.append(wl)
+        save_wl()
         await i.response.send_message(embed=discord.Embed(
             description=f"✅ {self.target.mention} a reçu la **{label}**.", color=0x00FF7F))
         try:
@@ -387,6 +404,7 @@ class WLRemoveSelect(discord.ui.Select):
         if uid in whitelisted and wl in whitelisted[uid]:
             whitelisted[uid].remove(wl)
             if not whitelisted[uid]: del whitelisted[uid]
+            save_wl()
         m = self.guild.get_member(uid)
         await i.response.send_message(f"✅ WL **{wl}** retirée à **{m.display_name if m else uid}**.", ephemeral=True)
 
@@ -563,7 +581,12 @@ async def acces_cmd(ctx, member: discord.Member = None):
     cid = ctx.author.voice.channel.id
     if cid not in private_vocs or private_vocs[cid]["owner"] != ctx.author.id:
         return await ctx.reply(embed=discord.Embed(description="❌ Ce n'est pas ta vocal privée.", color=0xFF0000))
-    pv_access.setdefault(cid, set()).add(member.id)
+    acc = pv_access.setdefault(cid, set())
+    # Toggle
+    if member.id in acc:
+        acc.discard(member.id)
+        return await ctx.reply(embed=discord.Embed(description=f"🔓 Accès retiré à **{member.display_name}**.", color=0xFFA500))
+    acc.add(member.id)
     await ctx.reply(embed=discord.Embed(description=f"✅ **{member.display_name}** peut rejoindre ta vocal privée.", color=0x00FF7F))
 
 # =join (rejoindre la voc d'une personne)
