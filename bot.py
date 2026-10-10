@@ -112,6 +112,7 @@ LOG_COLORS = {
     "join":        0x1ABC9C,
     "mv":          0x1ABC9C,
     "pvsys":       0x5865F2,
+    "dmall":       0x5865F2,
     "default":     0x36393F,
 }
 
@@ -139,6 +140,7 @@ LOG_ICONS = {
     "join":        "📞",
     "mv":          "↗️",
     "pvsys":       "🔒",
+    "dmall":       "📨",
     "default":     "📋",
 }
 
@@ -147,11 +149,10 @@ async def send_log(
     author: discord.Member,
     action_key: str,
     title: str,
-    fields: list,           # liste de (name, value, inline?)
+    fields: list,
     target: discord.Member = None,
     extra_desc: str = None,
 ):
-    """Envoie un embed de log détaillé dans le salon configuré."""
     if not LOG_CHANNEL_ID:
         return
     ch = guild.get_channel(LOG_CHANNEL_ID)
@@ -168,27 +169,22 @@ async def send_log(
         timestamp=now,
     )
 
-    # ── Auteur ──────────────────────────────────────────────────────
     e.set_author(
         name=f"{author.display_name}  •  {author.name}",
         icon_url=author.display_avatar.url,
     )
     e.set_thumbnail(url=author.display_avatar.url)
 
-    # ── Infos auteur ────────────────────────────────────────────────
     e.add_field(name="👤 Exécuté par",  value=f"{author.mention}\n`{author.id}`", inline=True)
     e.add_field(name="🕐 Timestamp",    value=f"<t:{int(now.timestamp())}:F>\n<t:{int(now.timestamp())}:R>", inline=True)
 
-    # ── Cible (si présente) ─────────────────────────────────────────
     if target:
         e.add_field(name="🎯 Cible",    value=f"{target.mention}\n`{target.id}`", inline=True)
         e.set_image(url=target.display_avatar.url)
 
-    # ── Séparateur ──────────────────────────────────────────────────
     if fields:
         e.add_field(name="\u200b", value="\u200b", inline=False)
 
-    # ── Champs custom ───────────────────────────────────────────────
     for f in fields:
         name, value = f[0], f[1]
         inline = f[2] if len(f) > 2 else True
@@ -408,7 +404,10 @@ async def maintenance_cmd(ctx):
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "maintenance",
         f"Maintenance {'activée' if maintenance else 'désactivée'}",
-        [("🔧 Statut", "🔴 EN MAINTENANCE" if maintenance else "🟢 Opérationnel")],
+        [
+            ("⌨️ Commande", "`&maintenance`"),
+            ("🔧 Statut", "🔴 EN MAINTENANCE" if maintenance else "🟢 Opérationnel"),
+        ],
     ))
 
 # ══════════════════════════════════════════════════════════════════════
@@ -448,6 +447,7 @@ class WLView(discord.ui.View):
             i.guild, self.invoker, "wl",
             f"WL attribuée — {label}",
             [
+                ("⌨️ Commande", "`&wl`"),
                 ("🏷️ WL",    f"`{wl}`  {icon}"),
                 ("📋 Label",  label),
             ],
@@ -616,7 +616,11 @@ class WLRemoveSelect(discord.ui.Select):
         asyncio.create_task(send_log(
             i.guild, i.user, "wl",
             f"WL retirée — {label}",
-            [("🏷️ WL", f"`{wl}`  {icon}"), ("📋 Label", label)],
+            [
+                ("⌨️ Commande", "`&wlpanel` → Retirer WL"),
+                ("🏷️ WL", f"`{wl}`  {icon}"),
+                ("📋 Label", label),
+            ],
             target=m,
         ))
         if m:
@@ -700,6 +704,7 @@ async def clear_cmd(ctx, amount: int = 50):
         ctx.guild, ctx.author, "clear",
         "Clear salon",
         [
+            ("⌨️ Commande",              "`&clear`"),
             ("🗑️ Messages supprimés", f"`{count}`"),
             ("📌 Salon",              ctx.channel.mention),
         ],
@@ -736,6 +741,7 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
         ctx.guild, ctx.author, "derank",
         "Derank exécuté",
         [
+            ("⌨️ Commande",        "`&derank`"),
             ("⚠️ Raison",         f"*{reason}*", False),
             ("🎭 Rôles retirés",  roles_txt,     False),
         ],
@@ -772,7 +778,12 @@ async def addrole_slash(i: discord.Interaction, role: discord.Role, tous: bool, 
         asyncio.create_task(send_log(
             i.guild, i.user, "addrole",
             "Role ajouté — Serveur entier",
-            [("🎭 Rôle", role.mention), ("✅ Réussi", f"`{ok}`"), ("❌ Échec", f"`{fail}`")],
+            [
+                ("⌨️ Commande",  "`/addrole`"),
+                ("🎭 Rôle",      role.mention),
+                ("✅ Réussi",    f"`{ok}`"),
+                ("❌ Échec",     f"`{fail}`"),
+            ],
         ))
     else:
         if not membre:
@@ -789,7 +800,10 @@ async def addrole_slash(i: discord.Interaction, role: discord.Role, tous: bool, 
             asyncio.create_task(send_log(
                 i.guild, i.user, "addrole",
                 "Role ajouté",
-                [("🎭 Rôle", role.mention)],
+                [
+                    ("⌨️ Commande", "`/addrole`"),
+                    ("🎭 Rôle",     role.mention),
+                ],
                 target=membre,
             ))
         except discord.Forbidden:
@@ -817,7 +831,12 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
         asyncio.create_task(send_log(
             i.guild, i.user, "removerole",
             "Role retiré — Serveur entier",
-            [("🎭 Rôle", role.mention), ("✅ Réussi", f"`{ok}`"), ("❌ Échec", f"`{fail}`")],
+            [
+                ("⌨️ Commande", "`/removerole`"),
+                ("🎭 Rôle",     role.mention),
+                ("✅ Réussi",   f"`{ok}`"),
+                ("❌ Échec",    f"`{fail}`"),
+            ],
         ))
     else:
         if not membre:
@@ -834,7 +853,10 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
             asyncio.create_task(send_log(
                 i.guild, i.user, "removerole",
                 "Role retiré",
-                [("🎭 Rôle", role.mention)],
+                [
+                    ("⌨️ Commande", "`/removerole`"),
+                    ("🎭 Rôle",     role.mention),
+                ],
                 target=membre,
             ))
         except discord.Forbidden:
@@ -844,7 +866,6 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
 #  COMMANDES VOICEVIP (=)
 # ══════════════════════════════════════════════════════════════════════
 
-# ── =laisse — Server WL ──────────────────────────────────────────────
 @bot.command(name="laisse")
 @check_server()
 async def laisse_cmd(ctx, member: discord.Member = None):
@@ -861,7 +882,8 @@ async def laisse_cmd(ctx, member: discord.Member = None):
         await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "laisse", "Laisse retirée",
-            [("📝 Ancien pseudo", f"`{on}`")], target=member,
+            [("⌨️ Commande", "`=laisse`"), ("📝 Ancien pseudo", f"`{on}`")],
+            target=member,
         ))
         return
     if oid in laisse_active:
@@ -879,7 +901,7 @@ async def laisse_cmd(ctx, member: discord.Member = None):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "laisse", "Laisse posée",
-        [("📝 Nouveau pseudo", f"`{new}`"), ("📝 Ancien pseudo", f"`{old}`")],
+        [("⌨️ Commande", "`=laisse`"), ("📝 Nouveau pseudo", f"`{new}`"), ("📝 Ancien pseudo", f"`{old}`")],
         target=member,
     ))
 
@@ -895,7 +917,7 @@ async def pv_cmd(ctx):
         e = embed_ok("Vocal rendue **publique**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "pv", "Vocal rendue publique",
-            [("🔊 Salon", f"`{ch.name}`")],
+            [("⌨️ Commande", "`=pv`"), ("🔊 Salon", f"`{ch.name}`")],
         ))
         return
     user_pvs = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
@@ -909,7 +931,7 @@ async def pv_cmd(ctx):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "pv", "Vocal privatisée",
-        [("🔊 Salon", f"`{ch.name}`"), ("🏷️ Type", f"`{pv_type}`")],
+        [("⌨️ Commande", "`=pv`"), ("🔊 Salon", f"`{ch.name}`"), ("🏷️ Type", f"`{pv_type}`")],
     ))
 
 @bot.command(name="acces")
@@ -928,7 +950,8 @@ async def acces_cmd(ctx, member: discord.Member = None):
         e = embed_warn(f"Acces retire a **{member.display_name}**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "acces", "Accès PV retiré",
-            [("🔊 Vocal", f"`{ctx.author.voice.channel.name}`")], target=member,
+            [("⌨️ Commande", "`=acces`"), ("🔊 Vocal", f"`{ctx.author.voice.channel.name}`")],
+            target=member,
         ))
         return
     acc.add(member.id)
@@ -936,7 +959,8 @@ async def acces_cmd(ctx, member: discord.Member = None):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "acces", "Accès PV accordé",
-        [("🔊 Vocal", f"`{ctx.author.voice.channel.name}`")], target=member,
+        [("⌨️ Commande", "`=acces`"), ("🔊 Vocal", f"`{ctx.author.voice.channel.name}`")],
+        target=member,
     ))
 
 @bot.command(name="join")
@@ -955,7 +979,8 @@ async def join_cmd(ctx, member: discord.Member = None):
         e = embed_ok(f"Rejoint **{ch_name}**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "join", "Join vocal",
-            [("🔊 Salon rejoins", f"`{ch_name}`")], target=member,
+            [("⌨️ Commande", "`=join`"), ("🔊 Salon rejoins", f"`{ch_name}`")],
+            target=member,
         ))
     except discord.Forbidden:
         await ctx.reply(embed=embed_err("Impossible de te deplacer."))
@@ -971,7 +996,8 @@ async def mv_cmd(ctx, member: discord.Member = None, channel: discord.VoiceChann
         e = embed_ok(f"**{member.display_name}** deplace dans **{channel.name}**."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "mv", "Move vocal",
-            [("🔊 Salon destination", f"`{channel.name}`")], target=member,
+            [("⌨️ Commande", "`=mv`"), ("🔊 Salon destination", f"`{channel.name}`")],
+            target=member,
         ))
     except discord.Forbidden:
         await ctx.reply(embed=embed_err("Impossible de deplacer ce membre."))
@@ -1000,7 +1026,9 @@ async def menotte_cmd(ctx, member: discord.Member = None):
         menotte_active.pop(oid)
         e = embed_warn(f"Menotte retiree a {member.mention}."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
-            ctx.guild, ctx.author, "menotte", "Menotte retirée", [], target=member,
+            ctx.guild, ctx.author, "menotte", "Menotte retirée",
+            [("⌨️ Commande", "`=menotte`")],
+            target=member,
         ))
         return
     if oid in menotte_active:
@@ -1017,7 +1045,8 @@ async def menotte_cmd(ctx, member: discord.Member = None):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "menotte", "Menotte posée",
-        [("🔊 Salon verrouillé", f"`{ch_name}`")], target=member,
+        [("⌨️ Commande", "`=menotte`"), ("🔊 Salon verrouillé", f"`{ch_name}`")],
+        target=member,
     ))
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1033,13 +1062,17 @@ async def follow_cmd(ctx, member: discord.Member = None):
         follow_active.pop(ctx.author.id)
         e = embed_warn(f"Follow sur **{member.display_name}** retire."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
-            ctx.guild, ctx.author, "follow", "Follow retiré", [], target=member,
+            ctx.guild, ctx.author, "follow", "Follow retiré",
+            [("⌨️ Commande", "`=follow`")],
+            target=member,
         ))
         return
     follow_active[ctx.author.id] = member.id
     e = embed_ok(f"Tu suis maintenant **{member.display_name}** en vocal. 🏃"); set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
-        ctx.guild, ctx.author, "follow", "Follow activé", [], target=member,
+        ctx.guild, ctx.author, "follow", "Follow activé",
+        [("⌨️ Commande", "`=follow`")],
+        target=member,
     ))
 
 @bot.command(name="pvsys")
@@ -1053,7 +1086,7 @@ async def pvsys_cmd(ctx):
         e = embed_ok("PV Sys desactivee, vocal rendue publique."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "pvsys", "PV Sys désactivée",
-            [("🔊 Salon", f"`{ch.name}`")],
+            [("⌨️ Commande", "`=pvsys`"), ("🔊 Salon", f"`{ch.name}`")],
         ))
         return
     user_pvs = [c for c, info in private_vocs.items() if info["owner"] == ctx.author.id]
@@ -1064,7 +1097,7 @@ async def pvsys_cmd(ctx):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "pvsys", "PV Sys activée",
-        [("🔊 Salon", f"`{ch.name}`")],
+        [("⌨️ Commande", "`=pvsys`"), ("🔊 Salon", f"`{ch.name}`")],
     ))
 
 # ══════════════════════════════════════════════════════════════════════
@@ -1084,7 +1117,7 @@ async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
         e = embed_ok(f"Message envoye anonymement a {member.mention}."); set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "mp", "MP anonyme envoyé",
-            [("✉️ Message", f"```{message[:200]}```", False)],
+            [("⌨️ Commande", "`=mp`"), ("✉️ Message", f"```{message[:200]}```", False)],
             target=member,
         ))
     except discord.Forbidden:
@@ -1117,7 +1150,7 @@ async def dog_add(i: discord.Interaction, membre: discord.Member):
     await i.response.send_message(embed=e)
     asyncio.create_task(send_log(
         i.guild, i.user, "dog", "Dog activé",
-        [("📝 Nouveau pseudo", f"`{new}`"), ("📝 Ancien pseudo", f"`{old}`")],
+        [("⌨️ Commande", "`/dog-add`"), ("📝 Nouveau pseudo", f"`{new}`"), ("📝 Ancien pseudo", f"`{old}`")],
         target=membre,
     ))
 
@@ -1138,7 +1171,7 @@ async def dog_del(i: discord.Interaction):
     await i.response.send_message(embed=e)
     asyncio.create_task(send_log(
         i.guild, i.user, "dog", "Dog retiré",
-        [("📝 Pseudo restauré", f"`{old}`")],
+        [("⌨️ Commande", "`/dog-del`"), ("📝 Pseudo restauré", f"`{old}`")],
         target=m,
     ))
 
@@ -1188,6 +1221,7 @@ class WakeupDurationSelect(discord.ui.Select):
         asyncio.create_task(send_log(
             i.guild, self.invoker, "wakeup", "Wakeup lancé",
             [
+                ("⌨️ Commande",  "`/wakeup`"),
                 ("⏱️ Durée",    f"`{duration}s`"),
                 ("✉️ Message",  f"`{self.custom_msg}`" if self.custom_msg else "*Aucun*"),
             ],
@@ -1215,6 +1249,7 @@ class WakeupCustomDurationModal(discord.ui.Modal, title="Durée personnalisée")
         asyncio.create_task(send_log(
             i.guild, self.invoker, "wakeup", "Wakeup lancé (custom)",
             [
+                ("⌨️ Commande",  "`/wakeup`"),
                 ("⏱️ Durée",   f"`{duration}s`"),
                 ("✉️ Message", f"`{self.custom_msg}`" if self.custom_msg else "*Aucun*"),
             ],
@@ -1246,6 +1281,7 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
             asyncio.create_task(send_log(
                 i.guild, self.invoker, "wakeup", "Wakeup lancé",
                 [
+                    ("⌨️ Commande",  "`/wakeup`"),
                     ("⏱️ Durée",   "`10s` (fixe)"),
                     ("✉️ Message", f"`{custom}`" if custom else "*Aucun*"),
                 ],
@@ -1262,7 +1298,7 @@ async def wakeup_slash(i, membre: discord.Member):
     await i.response.send_modal(WakeupModal(membre, i.user))
 
 # ══════════════════════════════════════════════════════════════════════
-#  /snap  — boutons + logs
+#  /snap
 # ══════════════════════════════════════════════════════════════════════
 class SnapResponseModal(discord.ui.Modal, title="Donner mon Snapchat"):
     snap = discord.ui.TextInput(label="Ton Snapchat", placeholder="ton_snap", max_length=50)
@@ -1288,6 +1324,7 @@ class SnapResponseModal(discord.ui.Modal, title="Donner mon Snapchat"):
                 self._parent_view.guild, i.user, "snap_give",
                 "Snap partagé ✅",
                 [
+                    ("⌨️ Commande",   "`/snap`"),
                     ("📸 Snap",       f"`{self.snap.value}`"),
                     ("📨 Demandeur",  f"{self.demandeur.mention}\n`{self.demandeur.id}`"),
                 ],
@@ -1333,7 +1370,10 @@ class SnapView(discord.ui.View):
         asyncio.create_task(send_log(
             self.guild, i.user, "snap_refuse",
             "Snap refusé ❌",
-            [("📨 Demandeur", f"{self.demandeur.mention}\n`{self.demandeur.id}`")],
+            [
+                ("⌨️ Commande",   "`/snap`"),
+                ("📨 Demandeur", f"{self.demandeur.mention}\n`{self.demandeur.id}`"),
+            ],
             target=self.demandeur,
         ))
         self.stop()
@@ -1362,6 +1402,7 @@ async def snap_slash(i: discord.Interaction, membre: discord.Member, message: st
             i.guild, i.user, "snap",
             "Snap demandé 📸",
             [
+                ("⌨️ Commande",  "`/snap`"),
                 ("✉️ Message",  f"`{message}`" if message else "*Aucun*"),
             ],
             target=membre,
@@ -1387,7 +1428,9 @@ async def tipeu_slash(i, membre: discord.Member):
         e = embed_warn(f"Pseudo de {membre.mention} deverrouille."); set_footer(e, i.user)
         await i.response.send_message(embed=e)
         asyncio.create_task(send_log(
-            i.guild, i.user, "tipeu", "Tipeu retiré — pseudo déverrouillé", [], target=membre,
+            i.guild, i.user, "tipeu", "Tipeu retiré — pseudo déverrouillé",
+            [("⌨️ Commande", "`/tipeu`")],
+            target=membre,
         ))
         return
     try:
@@ -1398,7 +1441,7 @@ async def tipeu_slash(i, membre: discord.Member):
         set_footer(e, i.user); await i.response.send_message(embed=e)
         asyncio.create_task(send_log(
             i.guild, i.user, "tipeu", "Tipeu activé — pseudo verrouillé",
-            [("📝 Ancien pseudo", f"`{old_nick}`"), ("📝 Nouveau pseudo", "`S`")],
+            [("⌨️ Commande", "`/tipeu`"), ("📝 Ancien pseudo", f"`{old_nick}`"), ("📝 Nouveau pseudo", "`S`")],
             target=membre,
         ))
     except discord.Forbidden:
@@ -1413,7 +1456,7 @@ async def help_cmd(ctx):
     if maintenance:
         e.description = "> 🔴 **Maintenance active.** Seuls les Sys+ ont acces aux commandes."
     if is_sys_plus(ctx.author.id):
-        e.add_field(name="⭐  Sys+  [ & ]", value="`&wl`  `&wlpanel`  `&lock`  `&renew`  `&restartpanel`  `&maintenance`  `&clear`  `&derank`\n`/addrole`  `/removerole`\n*+ toutes les commandes = et /*", inline=False)
+        e.add_field(name="⭐  Sys+  [ & ]", value="`&wl`  `&wlpanel`  `&lock`  `&renew`  `&restartpanel`  `&maintenance`  `&clear`  `&derank`  `&dmall`\n`/addrole`  `/removerole`\n*+ toutes les commandes = et /*", inline=False)
     if has_voicevip(ctx.author.id):
         e.add_field(name="🎤  VoiceVIP  [ = ]", value="`=pv`  `=acces`  `=join`  `=mv`  `=pvlist`  `=menotte`", inline=False)
     if has_wl_sys(ctx.author.id):
@@ -1426,7 +1469,7 @@ async def help_cmd(ctx):
     set_footer(e, ctx.author); await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
-#  &lock — lecture seule
+#  &lock
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="lock")
 @check_sys_plus()
@@ -1435,54 +1478,95 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     everyone = ctx.guild.default_role
 
     if channel.id in locked_channels:
-        ow_before = locked_channels.pop(channel.id)
-        if ow_before is None:
-            await channel.set_permissions(everyone, overwrite=None)
-        else:
-            await channel.set_permissions(everyone, overwrite=ow_before)
+        saved = locked_channels.pop(channel.id)
+        for target, ow in saved.items():
+            if ow is None:
+                await channel.set_permissions(target, overwrite=None)
+            else:
+                await channel.set_permissions(target, overwrite=ow)
         e = embed_ok(title="Salon déverrouillé", desc=f"{channel.mention} est de nouveau accessible à tous.")
         set_footer(e, ctx.author); await ctx.reply(embed=e)
         asyncio.create_task(send_log(
             ctx.guild, ctx.author, "lock", "Salon déverrouillé",
-            [("📌 Salon", channel.mention)],
+            [("⌨️ Commande", "`&lock`"), ("📌 Salon", channel.mention)],
         ))
         return
 
-    current = channel.overwrites_for(everyone)
-    locked_channels[channel.id] = current if not current.is_empty() else None
+    saved_overwrites = {}
+    existing_targets = list(channel.overwrites.keys())
 
-    locked_ow = discord.PermissionOverwrite(
-        view_channel=True, send_messages=False,
-        send_messages_in_threads=False, create_public_threads=False,
-        create_private_threads=False, add_reactions=False,
+    for target in existing_targets:
+        is_bot_member = isinstance(target, discord.Member) and target.bot
+        is_bot_role   = isinstance(target, discord.Role) and target.managed
+        if is_bot_member or is_bot_role:
+            continue
+
+        current_ow = channel.overwrites_for(target)
+        saved_overwrites[target] = current_ow if not current_ow.is_empty() else None
+
+        new_ow = discord.PermissionOverwrite.from_pair(
+            current_ow.pair()[0], current_ow.pair()[1]
+        ) if not current_ow.is_empty() else discord.PermissionOverwrite()
+        new_ow.send_messages               = False
+        new_ow.send_messages_in_threads    = False
+        new_ow.create_public_threads       = False
+        new_ow.create_private_threads      = False
+        new_ow.add_reactions               = False
+        new_ow.use_application_commands    = False
+        await channel.set_permissions(target, overwrite=new_ow)
+
+    everyone_ow = channel.overwrites_for(everyone)
+    if everyone not in saved_overwrites:
+        saved_overwrites[everyone] = everyone_ow if not everyone_ow.is_empty() else None
+    new_everyone = discord.PermissionOverwrite(
+        view_channel=True,
+        send_messages=False,
+        send_messages_in_threads=False,
+        create_public_threads=False,
+        create_private_threads=False,
+        add_reactions=False,
         use_application_commands=False,
     )
-    await channel.set_permissions(everyone, overwrite=locked_ow)
+    await channel.set_permissions(everyone, overwrite=new_everyone)
+
+    locked_channels[channel.id] = saved_overwrites
 
     for uid in SYS_PLUS_IDS:
         member = ctx.guild.get_member(uid)
         if member:
-            await channel.set_permissions(member, send_messages=True,
-                send_messages_in_threads=True, create_public_threads=True,
-                create_private_threads=True, add_reactions=True, use_application_commands=True)
+            await channel.set_permissions(member,
+                send_messages=True,
+                send_messages_in_threads=True,
+                create_public_threads=True,
+                create_private_threads=True,
+                add_reactions=True,
+                use_application_commands=True,
+            )
 
     e = discord.Embed(
         title="🔒  Salon verrouillé",
-        description=f"{channel.mention} est désormais **en lecture seule**.\nSeuls les **Sys+** peuvent écrire.\n\nRefais `&lock` pour déverrouiller.",
+        description=(
+            f"{channel.mention} est désormais **en lecture seule**.\n"
+            "Seuls les **Sys+** peuvent écrire.\n\n"
+            "Refais `&lock` pour déverrouiller."
+        ),
         color=C["maint"], timestamp=datetime.utcnow()
     )
     set_footer(e, ctx.author); await ctx.reply(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "lock", "Salon verrouillé (lecture seule)",
-        [("📌 Salon", channel.mention)],
+        [("⌨️ Commande", "`&lock`"), ("📌 Salon", channel.mention)],
     ))
     if channel != ctx.channel:
         try:
-            await channel.send(embed=discord.Embed(description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.", color=C["maint"]))
+            await channel.send(embed=discord.Embed(
+                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.",
+                color=C["maint"]
+            ))
         except: pass
 
 # ══════════════════════════════════════════════════════════════════════
-#  &renew — Supprimer et recréer le salon
+#  &renew
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="renew")
 @check_sys_plus()
@@ -1511,7 +1595,108 @@ async def renew_cmd(ctx, channel: discord.TextChannel = None):
     await new_ch.send(embed=e)
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "renew", "Salon renouvelé (recréé)",
-        [("📌 Salon", f"`#{name}`"), ("📂 Catégorie", f"`{category.name if category else 'Aucune'}`")],
+        [
+            ("⌨️ Commande",   "`&renew`"),
+            ("📌 Salon",      f"`#{name}`"),
+            ("📂 Catégorie",  f"`{category.name if category else 'Aucune'}`"),
+        ],
+    ))
+
+# ══════════════════════════════════════════════════════════════════════
+#  &dmall
+# ══════════════════════════════════════════════════════════════════════
+@bot.command(name="dmall")
+@check_sys_plus()
+async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
+    if not target or not message:
+        return await ctx.reply(embed=embed_err(
+            "Usage : `&dmall @user message`\n"
+            "Le `@user` sera remplacé par la mention de chaque personne qui reçoit le DM."
+        ))
+
+    members = [m for m in ctx.guild.members if not m.bot]
+    confirm_e = discord.Embed(
+        title="📨  Confirmer l'envoi global",
+        description=(
+            f"Tu vas envoyer un DM à **{len(members)}** membres.\n\n"
+            f"**Message :**\n> {message[:300]}\n\n"
+            f"**`@user` remplacé par :** mention individuelle de chaque destinataire\n\n"
+            "Clique **Confirmer** pour lancer l'envoi."
+        ),
+        color=C["warn"], timestamp=datetime.utcnow()
+    )
+    set_footer(confirm_e, ctx.author)
+
+    class ConfirmView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=30)
+            self.confirmed = False
+
+        @discord.ui.button(label="✅ Confirmer", style=discord.ButtonStyle.green)
+        async def confirm(self, interaction, button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message(embed=embed_err("Ce n'est pas ton panel."), ephemeral=True)
+            self.confirmed = True
+            for item in self.children: item.disabled = True
+            await interaction.response.edit_message(view=self)
+            self.stop()
+
+        @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.red)
+        async def cancel(self, interaction, button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message(embed=embed_err("Ce n'est pas ton panel."), ephemeral=True)
+            for item in self.children: item.disabled = True
+            await interaction.response.edit_message(view=self)
+            self.stop()
+
+    view = ConfirmView()
+    confirm_msg = await ctx.reply(embed=confirm_e, view=view)
+    await view.wait()
+
+    if not view.confirmed:
+        return await confirm_msg.edit(embed=embed_warn("Envoi annulé."), view=None)
+
+    target_mention = target.mention
+
+    progress_e = discord.Embed(
+        title="📨  Envoi en cours…",
+        description=f"Envoi à **{len(members)}** membres…",
+        color=C["info"], timestamp=datetime.utcnow()
+    )
+    set_footer(progress_e, ctx.author)
+    progress_msg = await ctx.send(embed=progress_e)
+
+    ok_count   = 0
+    fail_count = 0
+
+    for m in members:
+        personalized = message.replace(target_mention, m.mention)
+        try:
+            await m.send(personalized)
+            ok_count += 1
+        except (discord.Forbidden, discord.HTTPException):
+            fail_count += 1
+        await asyncio.sleep(0.7)
+
+    result_e = discord.Embed(
+        title="📨  DM Global terminé",
+        color=C["ok"], timestamp=datetime.utcnow()
+    )
+    result_e.add_field(name="✅ Envoyés",  value=f"`{ok_count}`",   inline=True)
+    result_e.add_field(name="❌ Échoués", value=f"`{fail_count}`",  inline=True)
+    result_e.add_field(name="📝 Message", value=f"```{message[:200]}```", inline=False)
+    set_footer(result_e, ctx.author)
+    await progress_msg.edit(embed=result_e)
+
+    asyncio.create_task(send_log(
+        ctx.guild, ctx.author, "dmall",
+        "DM Global envoyé",
+        [
+            ("⌨️ Commande",   "`&dmall`"),
+            ("✅ Envoyés",    f"`{ok_count}`"),
+            ("❌ Échoués",    f"`{fail_count}`"),
+            ("📝 Message",    f"```{message[:200]}```", False),
+        ],
     ))
 
 # ══════════════════════════════════════════════════════════════════════
