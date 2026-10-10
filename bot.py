@@ -1304,7 +1304,7 @@ async def help_cmd(ctx):
     if is_sys_plus(ctx.author.id):
         e.add_field(
             name="⭐  Sys+  [ & ]",
-            value="`&wl`  `&wlpanel`  `&restartpanel`  `&maintenance`  `&clear`  `&derank`\n`/addrole`  `/removerole`\n*+ toutes les commandes = et /*",
+            value="`&wl`  `&wlpanel` `&lock`  `&restartpanel`  `&maintenance`  `&clear`  `&derank`\n`/addrole`  `/removerole`\n*+ toutes les commandes = et /*",
             inline=False
         )
     if has_voicevip(ctx.author.id):
@@ -1331,6 +1331,82 @@ async def help_cmd(ctx):
     e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
     set_footer(e, ctx.author)
     await ctx.reply(embed=e)
+
+# ══════════════════════════════════════════════════════════════════════
+#  &lock — Verrouiller un salon (Sys+ uniquement)
+# ══════════════════════════════════════════════════════════════════════
+locked_channels = {}   # {channel_id: {role_id: overwrite_before}}
+
+@bot.command(name="lock")
+@check_sys_plus()
+async def lock_cmd(ctx, channel: discord.TextChannel = None):
+    channel = channel or ctx.channel
+
+    # ── Déverrouillage si déjà locké ──────────────────────────────────
+    if channel.id in locked_channels:
+        saved = locked_channels.pop(channel.id)
+        for role_id, ow_before in saved.items():
+            role = ctx.guild.get_role(role_id)
+            if role is None:
+                continue
+            if ow_before is None:
+                await channel.set_permissions(role, overwrite=None)
+            else:
+                await channel.set_permissions(role, overwrite=ow_before)
+        e = embed_ok(
+            title="Salon déverrouillé",
+            desc=f"{channel.mention} est de nouveau accessible à tous."
+        )
+        set_footer(e, ctx.author)
+        return await ctx.reply(embed=e)
+
+    # ── Verrouillage ──────────────────────────────────────────────────
+    saved = {}
+    roles_to_lock = [
+        r for r in ctx.guild.roles
+        if r != ctx.guild.default_role and r.id not in SYS_PLUS_IDS
+        and not any(uid in SYS_PLUS_IDS for uid in [r.id])
+    ]
+    # On cible @everyone + tous les rôles non-Sys+
+    targets = [ctx.guild.default_role] + [
+        r for r in ctx.guild.roles if r.id not in SYS_PLUS_IDS
+    ]
+
+    for role in targets:
+        # Sauvegarde de l'overwrite actuel
+        current = channel.overwrites_for(role)
+        saved[role.id] = current if current.is_empty() is False else None
+        # Interdit l'envoi de messages
+        await channel.set_permissions(role, send_messages=False)
+
+    locked_channels[channel.id] = saved
+
+    # Autorise explicitement les Sys+ à parler
+    for uid in SYS_PLUS_IDS:
+        member = ctx.guild.get_member(uid)
+        if member:
+            await channel.set_permissions(member, send_messages=True)
+
+    e = discord.Embed(
+        title="🔒  Salon verrouillé",
+        description=(
+            f"{channel.mention} est désormais **verrouillé**.\n"
+            f"Seuls les **Sys+** peuvent écrire dedans.\n\n"
+            f"Refais `&lock` pour déverrouiller."
+        ),
+        color=C["maint"],
+        timestamp=datetime.utcnow()
+    )
+    set_footer(e, ctx.author)
+    await ctx.reply(embed=e)
+    # Annonce dans le salon locké (si c'est un autre salon)
+    if channel != ctx.channel:
+        try:
+            await channel.send(embed=discord.Embed(
+                description="🔒  Ce salon est **verrouillé** — seuls les Sys+ peuvent écrire.",
+                color=C["maint"]
+            ))
+        except: pass
 
 # ══════════════════════════════════════════════════════════════════════
 #  LANCEMENT
