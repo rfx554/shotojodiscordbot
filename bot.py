@@ -35,18 +35,19 @@ def save_wl():
 # ════════════════════════════════════════════════════════════════
 #  STOCKAGE MÉMOIRE
 # ════════════════════════════════════════════════════════════════
-whitelisted   = load_wl()   # uid -> ["voicevip","server","sys","privilege"]
-private_vocs  = {}   # channel_id -> {"owner": uid, "type": "normal"|"sys"|"sysplus"}
-pv_access     = {}   # channel_id -> set(uid)
-follow_active = {}   # follower_id -> target_id
-laisse_active = {}   # owner_id -> (cible_id, new_nick, old_nick)
-dog_active    = {}   # owner_id -> (cible_id, new_nick, old_nick)
-menotte_active= {}   # owner_id -> (cible_id, channel_id)
+whitelisted   = load_wl()
+private_vocs  = {}
+pv_access     = {}
+follow_active = {}
+laisse_active = {}
+dog_active    = {}
+menotte_active= {}
 wakeup_active = set()
-wakeup_cd     = {}   # invoker_id -> timestamp
-dog_cd        = {}   # invoker_id -> timestamp
-menotte_cd    = {}   # invoker_id -> timestamp
-locked_nicks  = set()  # user_ids dont le pseudo est locké (tipeu)
+wakeup_cd     = {}
+dog_cd        = {}
+menotte_cd    = {}
+locked_nicks  = set()
+maintenance   = False  # ← mode maintenance
 
 # ════════════════════════════════════════════════════════════════
 #  PRÉFIXES
@@ -67,15 +68,12 @@ def is_sys(uid):      return uid in SYS_PLUS_IDS or "sys" in whitelisted.get(uid
 def has_wl(uid, t):   return uid in SYS_PLUS_IDS or t in whitelisted.get(uid, [])
 
 def has_voicevip(uid):
-    # VoiceVIP donne accès aux commandes VoiceVIP
-    # WL Sys inclut aussi les commandes VoiceVIP (c'est une upgrade)
     return uid in SYS_PLUS_IDS or "voicevip" in whitelisted.get(uid, []) or "sys" in whitelisted.get(uid, [])
 
 def has_server(uid):
     return uid in SYS_PLUS_IDS or "server" in whitelisted.get(uid, [])
 
 def has_wl_sys(uid):
-    # WL Sys uniquement — pas accessible avec VoiceVIP seule
     return uid in SYS_PLUS_IDS or "sys" in whitelisted.get(uid, [])
 
 async def protection_check(ctx, target: discord.Member) -> bool:
@@ -106,6 +104,9 @@ def check_sys_plus():
 
 def check_voicevip():
     async def pred(ctx):
+        if maintenance and not is_sys_plus(ctx.author.id):
+            await ctx.reply(embed=discord.Embed(description="🔧 Le bot est en **maintenance**.", color=0xFFA500))
+            return False
         if not has_voicevip(ctx.author.id):
             await ctx.reply(embed=discord.Embed(description="❌ Tu n'as pas la **VoiceVIP**.", color=0xFF0000))
             return False
@@ -114,6 +115,9 @@ def check_voicevip():
 
 def check_server():
     async def pred(ctx):
+        if maintenance and not is_sys_plus(ctx.author.id):
+            await ctx.reply(embed=discord.Embed(description="🔧 Le bot est en **maintenance**.", color=0xFFA500))
+            return False
         if not has_server(ctx.author.id):
             await ctx.reply(embed=discord.Embed(description="❌ Tu n'as pas la **Server WL**.", color=0xFF0000))
             return False
@@ -122,11 +126,29 @@ def check_server():
 
 def check_wl_sys():
     async def pred(ctx):
+        if maintenance and not is_sys_plus(ctx.author.id):
+            await ctx.reply(embed=discord.Embed(description="🔧 Le bot est en **maintenance**.", color=0xFFA500))
+            return False
         if not has_wl_sys(ctx.author.id):
             await ctx.reply(embed=discord.Embed(description="❌ Tu n'as pas la **WL Sys**.", color=0xFF0000))
             return False
         return True
     return commands.check(pred)
+
+# ════════════════════════════════════════════════════════════════
+#  MIDDLEWARE MAINTENANCE (prefix commands)
+# ════════════════════════════════════════════════════════════════
+@bot.before_invoke
+async def before_any_command(ctx):
+    # &maintenance est toujours accessible aux Sys+
+    if ctx.command and ctx.command.name == "maintenance":
+        return
+    if maintenance and not is_sys_plus(ctx.author.id):
+        await ctx.reply(embed=discord.Embed(
+            title="🔧 Maintenance",
+            description="Le bot est actuellement en **maintenance**.\nReviens un peu plus tard !",
+            color=0xFFA500))
+        raise commands.CheckFailure("maintenance")
 
 # ════════════════════════════════════════════════════════════════
 #  EVENTS
@@ -146,7 +168,6 @@ async def on_ready():
 
 @bot.event
 async def on_member_update(before, after):
-    # Lock pseudo (tipeu)
     if after.id in locked_nicks:
         if after.nick != "S":
             try: await after.edit(nick="S")
@@ -156,7 +177,6 @@ async def on_member_update(before, after):
 async def on_voice_state_update(member, before, after):
     guild = member.guild
 
-    # Follow (WL Sys)
     for fid, tid in list(follow_active.items()):
         if member.id == tid and after.channel and after.channel != before.channel:
             follower = guild.get_member(fid)
@@ -164,7 +184,6 @@ async def on_voice_state_update(member, before, after):
                 try: await follower.move_to(after.channel)
                 except: pass
 
-    # Dog follow
     for oid, (cid, _, _) in list(dog_active.items()):
         if member.id == oid and after.channel and after.channel != before.channel:
             cible = guild.get_member(cid)
@@ -172,7 +191,6 @@ async def on_voice_state_update(member, before, after):
                 try: await cible.move_to(after.channel)
                 except: pass
 
-    # Menotte : remet ultra vite dans la voc
     for oid, (cid, ch_id) in list(menotte_active.items()):
         if member.id == cid and before.channel and before.channel.id == ch_id and after.channel != before.channel:
             locked_ch = guild.get_channel(ch_id)
@@ -183,7 +201,6 @@ async def on_voice_state_update(member, before, after):
                     except: pass
                 asyncio.create_task(remmenotter())
 
-    # Voc privée : kick selon type
     if after.channel and after.channel.id in private_vocs:
         ch_id = after.channel.id
         pv_info = private_vocs[ch_id]
@@ -191,27 +208,23 @@ async def on_voice_state_update(member, before, after):
         pv_type = pv_info["type"]
         allowed = pv_access.get(ch_id, set()) | {owner_id}
 
-        # Owner et Sys+ toujours libres
         if member.id in allowed or is_owner(member.id) or is_sys_plus(member.id):
             pass
-        # PV normale : kick tout le monde sauf accès + si has_wl_sys → passe
         elif pv_type == "normal":
             if has_wl_sys(member.id):
-                pass  # WL Sys passe dans une pv normale
+                pass
             else:
                 try:
                     await member.move_to(None)
                     await member.send(embed=discord.Embed(
                         title="🔒 Vocal privée", description="Cette vocal est privée.", color=0xFF0000))
                 except: pass
-        # PV Sys : kick tout le monde sauf accès + Sys+
         elif pv_type == "sys":
             try:
                 await member.move_to(None)
                 await member.send(embed=discord.Embed(
                     title="🔒 Vocal privée Sys", description="Cette vocal est privée (Sys).", color=0xFF0000))
             except: pass
-        # PV Sys+ : kick tout le monde sauf accès + Sys+
         elif pv_type == "sysplus":
             try:
                 await member.move_to(None)
@@ -219,12 +232,42 @@ async def on_voice_state_update(member, before, after):
                     title="🔒 Vocal privée Sys+", description="Cette vocal est privée (Sys+).", color=0xFF0000))
             except: pass
 
-    # Owner quitte sa pv → déprivatise
     if before.channel and before.channel.id in private_vocs:
         ch_id = before.channel.id
         if private_vocs[ch_id]["owner"] == member.id:
             private_vocs.pop(ch_id, None)
             pv_access.pop(ch_id, None)
+
+# ════════════════════════════════════════════════════════════════
+#  &maintenance — Sys+ uniquement
+# ════════════════════════════════════════════════════════════════
+@bot.command(name="maintenance")
+@check_sys_plus()
+async def maintenance_cmd(ctx):
+    global maintenance
+    maintenance = not maintenance
+    if maintenance:
+        await bot.change_presence(
+            status=discord.Status.do_not_disturb,
+            activity=discord.Game("🔧 Maintenance en cours")
+        )
+        await ctx.reply(embed=discord.Embed(
+            title="🔧 Maintenance activée",
+            description="Le bot est en **maintenance**.\nToutes les commandes sont bloquées pour les non-Sys+.",
+            color=0xFFA500))
+    else:
+        await bot.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(
+                type=discord.ActivityType.watching,
+                name="Shotojo 🌸 #🇯🇵",
+                state="Nous vous préparons de grandes choses"
+            )
+        )
+        await ctx.reply(embed=discord.Embed(
+            title="✅ Maintenance désactivée",
+            description="Le bot est de retour, toutes les commandes sont disponibles.",
+            color=0x00FF7F))
 
 # ════════════════════════════════════════════════════════════════
 #  &wl — Panel whitelist (Sys+)
@@ -433,13 +476,11 @@ class VoiceVIPMainPanel(discord.ui.View):
         await i.response.send_message(embed=embed, view=WLSubPanel(self.guild), ephemeral=True)
 
 def build_wlpanel_embed(guild):
-    """Embed du panel WL — comptage par personne (1 personne = 1 même avec plusieurs WL)."""
     voicevip_p = set()
     server_p   = set()
     sys_p      = set()
     priv_p     = set()
 
-    # Sys+ toujours comptés (même s'ils ne sont pas dans le cache du guild)
     for uid in SYS_PLUS_IDS:
         voicevip_p.add(uid); server_p.add(uid); sys_p.add(uid)
 
@@ -449,14 +490,16 @@ def build_wlpanel_embed(guild):
         if "sys"       in wls: sys_p.add(uid)
         if "privilege" in wls: priv_p.add(uid)
 
-    embed = discord.Embed(title="🎛️ Panel WL — Sys+", color=0x5865F2)
-    embed.add_field(name="🎤 VoiceVIP",          value=f"**{len(voicevip_p)}** personne(s)", inline=True)
-    embed.add_field(name="🌐 Server",             value=f"**{len(server_p)}** personne(s)",  inline=True)
-    embed.add_field(name="⚡ WL Sys",             value=f"**{len(sys_p)}** personne(s)",     inline=True)
-    embed.add_field(name="👑 Privilege",          value=f"**{len(priv_p)}** personne(s)",    inline=True)
-    embed.add_field(name="🔒 Vocs privées",       value=str(len(private_vocs)),              inline=True)
-    embed.add_field(name="🐕 Laisses actives",    value=str(len(laisse_active)),             inline=True)
-    embed.add_field(name="🏃 Follows actifs",     value=str(len(follow_active)),             inline=True)
+    status = "🔧 **EN MAINTENANCE**" if maintenance else "✅ Opérationnel"
+    embed = discord.Embed(title="🎛️ Panel WL — Sys+", color=0xFFA500 if maintenance else 0x5865F2)
+    embed.add_field(name="🤖 Statut bot",             value=status,                              inline=False)
+    embed.add_field(name="🎤 VoiceVIP",               value=f"**{len(voicevip_p)}** personne(s)", inline=True)
+    embed.add_field(name="🌐 Server",                  value=f"**{len(server_p)}** personne(s)",  inline=True)
+    embed.add_field(name="⚡ WL Sys",                  value=f"**{len(sys_p)}** personne(s)",     inline=True)
+    embed.add_field(name="👑 Privilege",               value=f"**{len(priv_p)}** personne(s)",    inline=True)
+    embed.add_field(name="🔒 Vocs privées",            value=str(len(private_vocs)),              inline=True)
+    embed.add_field(name="🐕 Laisses actives",         value=str(len(laisse_active)),             inline=True)
+    embed.add_field(name="🏃 Follows actifs",          value=str(len(follow_active)),             inline=True)
     embed.set_footer(text="1 personne = 1 comptée par WL même si elle en a plusieurs")
     return embed
 
@@ -514,10 +557,8 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
     except: pass
 
 # ════════════════════════════════════════════════════════════════
-#  COMMANDES VOICEVIP (=) — aussi dispo aux Sys+
+#  COMMANDES VOICEVIP (=)
 # ════════════════════════════════════════════════════════════════
-
-# =laisse
 @bot.command(name="laisse")
 @check_voicevip()
 async def laisse_cmd(ctx, member: discord.Member = None):
@@ -543,7 +584,6 @@ async def laisse_cmd(ctx, member: discord.Member = None):
     laisse_active[oid] = (member.id, new, old)
     await ctx.reply(embed=discord.Embed(description=f"🐕 {member.mention} est maintenant sous ta laisse.", color=0x00FF7F))
 
-# =pv (VoiceVIP = pv normale, WL Sys = pv sys, Sys+ = pv sys+)
 @bot.command(name="pv")
 @check_voicevip()
 async def pv_cmd(ctx):
@@ -570,7 +610,6 @@ async def pv_cmd(ctx):
     await ctx.reply(embed=discord.Embed(
         description=f"{labels[pv_type]} **{ctx.author.voice.channel.name}** est maintenant privée.", color=0x5865F2))
 
-# =acces
 @bot.command(name="acces")
 @check_voicevip()
 async def acces_cmd(ctx, member: discord.Member = None):
@@ -582,14 +621,12 @@ async def acces_cmd(ctx, member: discord.Member = None):
     if cid not in private_vocs or private_vocs[cid]["owner"] != ctx.author.id:
         return await ctx.reply(embed=discord.Embed(description="❌ Ce n'est pas ta vocal privée.", color=0xFF0000))
     acc = pv_access.setdefault(cid, set())
-    # Toggle
     if member.id in acc:
         acc.discard(member.id)
         return await ctx.reply(embed=discord.Embed(description=f"🔓 Accès retiré à **{member.display_name}**.", color=0xFFA500))
     acc.add(member.id)
     await ctx.reply(embed=discord.Embed(description=f"✅ **{member.display_name}** peut rejoindre ta vocal privée.", color=0x00FF7F))
 
-# =join (rejoindre la voc d'une personne)
 @bot.command(name="join")
 @check_voicevip()
 async def join_cmd(ctx, member: discord.Member = None):
@@ -607,7 +644,6 @@ async def join_cmd(ctx, member: discord.Member = None):
     except discord.Forbidden:
         await ctx.reply(embed=discord.Embed(description="❌ Impossible de te déplacer.", color=0xFF0000))
 
-# =mv
 @bot.command(name="mv")
 @check_voicevip()
 async def mv_cmd(ctx, member: discord.Member = None, channel: discord.VoiceChannel = None):
@@ -620,7 +656,6 @@ async def mv_cmd(ctx, member: discord.Member = None, channel: discord.VoiceChann
     except discord.Forbidden:
         await ctx.reply(embed=discord.Embed(description="❌ Impossible.", color=0xFF0000))
 
-# =pvlist
 @bot.command(name="pvlist")
 @check_voicevip()
 async def pvlist_cmd(ctx):
@@ -637,7 +672,6 @@ async def pvlist_cmd(ctx):
             value=f"Owner : {ow.mention if ow else info['owner']}\nAccès : {acc_str}", inline=False)
     await ctx.reply(embed=embed)
 
-# =menotte (VoiceVIP)
 @bot.command(name="menotte")
 @check_voicevip()
 async def menotte_cmd(ctx, member: discord.Member = None):
@@ -646,24 +680,18 @@ async def menotte_cmd(ctx, member: discord.Member = None):
     if not await protection_check(ctx, member): return
     oid = ctx.author.id
     now = time.time()
-
-    # Toggle
     if oid in menotte_active and menotte_active[oid][0] == member.id:
         menotte_active.pop(oid)
         return await ctx.reply(embed=discord.Embed(description=f"🔓 Menotte retirée à {member.mention}.", color=0xFFA500))
     if oid in menotte_active:
         return await ctx.reply(embed=discord.Embed(description="❌ Tu as déjà une menotte active.", color=0xFF0000))
-
-    # Cooldown (pas pour les Sys+)
     if not is_sys_plus(oid):
         last = menotte_cd.get(oid, 0)
         if now - last < 120:
             return await ctx.reply(embed=discord.Embed(
                 description=f"⏳ Cooldown menotte : encore **{int(120-(now-last))}s**.", color=0xFFA500))
-
     if not member.voice:
         return await ctx.reply(embed=discord.Embed(description="❌ Ce membre n'est pas en vocal.", color=0xFF0000))
-
     ch_id = member.voice.channel.id
     menotte_active[oid] = (member.id, ch_id)
     menotte_cd[oid] = now
@@ -673,8 +701,6 @@ async def menotte_cmd(ctx, member: discord.Member = None):
 # ════════════════════════════════════════════════════════════════
 #  COMMANDES WL SYS (=)
 # ════════════════════════════════════════════════════════════════
-
-# =follow (WL Sys)
 @bot.command(name="follow")
 @check_wl_sys()
 async def follow_cmd(ctx, member: discord.Member = None):
@@ -687,11 +713,9 @@ async def follow_cmd(ctx, member: discord.Member = None):
     follow_active[ctx.author.id] = member.id
     await ctx.reply(embed=discord.Embed(description=f"🏃 Tu suis maintenant **{member.display_name}**.", color=0x00FF7F))
 
-# =pvsys (WL Sys uniquement — pv de type sys)
 @bot.command(name="pvsys")
 @check_wl_sys()
 async def pvsys_cmd(ctx):
-    # Même logique que =pv mais force le type sys
     if not ctx.author.voice:
         return await ctx.reply(embed=discord.Embed(description="❌ Tu n'es pas dans une vocal.", color=0xFF0000))
     cid = ctx.author.voice.channel.id
@@ -704,15 +728,15 @@ async def pvsys_cmd(ctx):
     private_vocs[cid] = {"owner": ctx.author.id, "type": "sys"}
     pv_access[cid] = set()
     await ctx.reply(embed=discord.Embed(
-        description=f"🔒 **{ctx.author.voice.channel.name}** est maintenant en **PV Sys** (les autres WL Sys peuvent entrer, pas les VoiceVIP normaux).", color=0x5865F2))
+        description=f"🔒 **{ctx.author.voice.channel.name}** est maintenant en **PV Sys**.", color=0x5865F2))
 
 # ════════════════════════════════════════════════════════════════
 #  COMMANDES SERVER (= et /slash)
 # ════════════════════════════════════════════════════════════════
-
-# =mp (Server WL)
 @bot.command(name="mp")
 async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
+    if maintenance and not is_sys_plus(ctx.author.id):
+        return await ctx.reply(embed=discord.Embed(description="🔧 Le bot est en **maintenance**.", color=0xFFA500))
     if not has_server(ctx.author.id):
         return await ctx.reply(embed=discord.Embed(description="❌ Tu n'as pas la **Server WL**.", color=0xFF0000))
     if not member or not message:
@@ -724,10 +748,11 @@ async def mp_cmd(ctx, member: discord.Member = None, *, message: str = None):
     except discord.Forbidden:
         await ctx.reply(embed=discord.Embed(description="❌ Impossible d'envoyer le MP (DMs fermés).", color=0xFF0000))
 
-# /dog-add et /dog-del
 @tree.command(name="dog-add", description="Dog quelqu'un — le suit partout en voc (Server WL)")
 @app_commands.describe(membre="La personne à dog")
 async def dog_add(i: discord.Interaction, membre: discord.Member):
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message("❌ Tu n'as pas la **Server WL**.", ephemeral=True)
     if not await protection_check_i(i, membre): return
@@ -746,14 +771,16 @@ async def dog_add(i: discord.Interaction, membre: discord.Member):
     try:
         await membre.edit(nick=new)
     except discord.Forbidden:
-        return await i.response.send_message("❌ Impossible de changer le pseudo (permissions insuffisantes).", ephemeral=True)
+        return await i.response.send_message("❌ Impossible de changer le pseudo.", ephemeral=True)
     dog_active[oid] = (membre.id, new, old)
     dog_cd[oid] = now
     await i.response.send_message(embed=discord.Embed(
-        description=f"🐕 **{membre.display_name}** est maintenant ton dog et te suivra en voc.", color=0x00FF7F))
+        description=f"🐕 **{membre.display_name}** est maintenant ton dog.", color=0x00FF7F))
 
 @tree.command(name="dog-del", description="Retirer le dog (Server WL)")
 async def dog_del(i: discord.Interaction):
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message("❌ Tu n'as pas la **Server WL**.", ephemeral=True)
     oid = i.user.id
@@ -766,7 +793,6 @@ async def dog_del(i: discord.Interaction):
         except: pass
     await i.response.send_message(embed=discord.Embed(description="🔓 Dog retiré.", color=0xFFA500))
 
-# /wakeup
 class WakeupModal(discord.ui.Modal, title="Wakeup"):
     message = discord.ui.TextInput(
         label="Message (optionnel)",
@@ -785,13 +811,8 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
                 return await i.response.send_message(f"⏳ Cooldown : encore **{int(300-(now-last))}s**.", ephemeral=True)
         if self.target.id in wakeup_active:
             return await i.response.send_message("❌ Déjà en wakeup.", ephemeral=True)
-
         custom = self.message.value.strip()
-        if custom:
-            spam_msg = f"{self.target.mention} {custom}"
-        else:
-            spam_msg = f"Réveille toi {self.target.mention} ! C'est {self.invoker.mention} qui te l'ordonne"
-
+        spam_msg = f"{self.target.mention} {custom}" if custom else f"Réveille toi {self.target.mention} ! C'est {self.invoker.mention} qui te l'ordonne"
         wakeup_active.add(self.target.id)
         wakeup_cd[self.invoker.id] = now
         await i.response.send_message(f"✅ Wakeup lancé sur {self.target.mention} !", ephemeral=True)
@@ -817,11 +838,12 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
 @tree.command(name="wakeup", description="Wakeup un membre (Server WL)")
 @app_commands.describe(membre="Le membre à wakeup")
 async def wakeup_slash(i: discord.Interaction, membre: discord.Member):
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message("❌ Tu n'as pas la **Server WL**.", ephemeral=True)
     await i.response.send_modal(WakeupModal(membre, i.user))
 
-# /snap
 class SnapResponseModal(discord.ui.Modal, title="Donner mon Snap"):
     snap = discord.ui.TextInput(label="Ton Snapchat", placeholder="ton_snap", max_length=50)
     def __init__(self, demandeur: discord.Member):
@@ -846,6 +868,8 @@ class SnapView(discord.ui.View):
 @tree.command(name="snap", description="Demander le snap de quelqu'un (Server WL)")
 @app_commands.describe(membre="La personne à qui demander", message="Ton petit message")
 async def snap_slash(i: discord.Interaction, membre: discord.Member, message: str = ""):
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message("❌ Tu n'as pas la **Server WL**.", ephemeral=True)
     embed = discord.Embed(title="📸 Quelqu'un veut ton Snap !", color=0xFFFC00)
@@ -859,10 +883,11 @@ async def snap_slash(i: discord.Interaction, membre: discord.Member, message: st
     except:
         await i.response.send_message("❌ Impossible d'envoyer le MP (DMs fermés).", ephemeral=True)
 
-# /tipeu
 @tree.command(name="tipeu", description="Rename en S et lock le pseudo (Server WL)")
 @app_commands.describe(membre="La cible")
 async def tipeu_slash(i: discord.Interaction, membre: discord.Member):
+    if maintenance and not is_sys_plus(i.user.id):
+        return await i.response.send_message("🔧 Le bot est en **maintenance**.", ephemeral=True)
     if not has_server(i.user.id):
         return await i.response.send_message("❌ Tu n'as pas la **Server WL**.", ephemeral=True)
     if not await protection_check_i(i, membre): return
@@ -881,26 +906,15 @@ async def tipeu_slash(i: discord.Interaction, membre: discord.Member):
         await i.response.send_message("❌ Impossible de changer le pseudo.", ephemeral=True)
 
 # ════════════════════════════════════════════════════════════════
-#  &restartbot — Sys+ uniquement
-# ════════════════════════════════════════════════════════════════
-@bot.command(name="restartbot")
-@check_sys_plus()
-async def restartbot_cmd(ctx):
-    await ctx.reply(embed=discord.Embed(
-        title="🔄 Redémarrage...",
-        description="Le bot va redémarrer. Les commandes `/` seront synchronisées au retour. ⏳",
-        color=0xFFA500))
-    await asyncio.sleep(1)
-    await bot.close()
-
-# ════════════════════════════════════════════════════════════════
 #  &help / =help
 # ════════════════════════════════════════════════════════════════
 @bot.command(name="help")
 async def help_cmd(ctx):
     embed = discord.Embed(title="📖 Commandes", color=0x5865F2)
+    if maintenance:
+        embed.description = "🔧 **Le bot est en maintenance.** Seuls les Sys+ peuvent utiliser les commandes."
     if is_sys_plus(ctx.author.id):
-        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&wlpanel` `&restartpanel` `&restartbot` `&clear` `&derank`\n*+ toutes les commandes `=` et `/`*", inline=False)
+        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&wlpanel` `&restartpanel` `&maintenance` `&clear` `&derank`\n*+ toutes les commandes `=` et `/`*", inline=False)
     if has_voicevip(ctx.author.id):
         embed.add_field(name="🎤 VoiceVIP (=)", value="`=laisse` `=pv` `=acces` `=join` `=mv` `=pvlist` `=menotte`", inline=False)
     if has_wl_sys(ctx.author.id):
