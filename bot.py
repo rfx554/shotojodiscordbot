@@ -22,20 +22,19 @@ WL_FILE = "whitelisted.json"
 
 # ── Palette de couleurs centralisée ──────────────────────────────────
 C = {
-    "ok":       0x57F287,   # vert Discord
-    "error":    0xED4245,   # rouge Discord
-    "warn":     0xFEE75C,   # jaune Discord
-    "info":     0x5865F2,   # bleu Discord (blurple)
-    "sys":      0xEB459E,   # rose vif  -> Sys+
-    "orange":   0xFF6B35,   # orange    -> derank / actions lourdes
-    "maint":    0xFFA500,   # orange clair -> maintenance
-    "dark":     0x2B2D31,   # quasi-noir -> panels
-    "purple":   0x9B59B6,   # violet    -> VoiceVIP
-    "teal":     0x1ABC9C,   # turquoise -> Server WL
+    "ok":       0x57F287,
+    "error":    0xED4245,
+    "warn":     0xFEE75C,
+    "info":     0x5865F2,
+    "sys":      0xEB459E,
+    "orange":   0xFF6B35,
+    "maint":    0xFFA500,
+    "dark":     0x2B2D31,
+    "purple":   0x9B59B6,
+    "teal":     0x1ABC9C,
 }
 
 def ts():
-    """Timestamp Discord court."""
     return f"<t:{int(time.time())}:R>"
 
 def embed_ok(desc=None, title=None):
@@ -1012,6 +1011,138 @@ async def dog_del(i: discord.Interaction):
     set_footer(e, i.user)
     await i.response.send_message(embed=e)
 
+# ══════════════════════════════════════════════════════════════════════
+#  /wakeup — Logique centrale
+# ══════════════════════════════════════════════════════════════════════
+async def _run_wakeup(guild: discord.Guild, target: discord.Member, invoker: discord.Member,
+                      custom_msg: str, duration: int):
+    """Lance le wakeup : spam DM ultra-rapide + déplacements toutes les 200ms."""
+    spam_msg = (
+        f"{target.mention} {custom_msg}" if custom_msg
+        else f"Reveille toi {target.mention} ! C'est {invoker.mention} qui te l'ordonne 😈"
+    )
+    wakeup_active.add(target.id)
+    wakeup_cd[invoker.id] = time.time()
+
+    vcs     = list(guild.voice_channels)
+    n_spam  = duration * 3          # ~3 msgs/s pendant toute la durée
+    delay   = max(0.1, 1.0 / 3)    # 1 msg toutes les 333ms
+
+    async def spam_task():
+        for _ in range(n_spam):
+            if target.id not in wakeup_active:
+                break
+            try:
+                await target.send(spam_msg)
+            except Exception:
+                pass
+            await asyncio.sleep(delay)
+
+    asyncio.create_task(spam_task())
+
+    end = asyncio.get_event_loop().time() + duration
+    while asyncio.get_event_loop().time() < end:
+        if target.voice and vcs:
+            try:
+                await target.move_to(random.choice(vcs))
+            except Exception:
+                pass
+        await asyncio.sleep(0.2)    # déplacement toutes les 200ms
+
+    try:
+        await target.move_to(None)
+    except Exception:
+        pass
+    wakeup_active.discard(target.id)
+
+
+# ── Sélecteur de durée (Sys+ uniquement) ─────────────────────────────
+class WakeupDurationSelect(discord.ui.Select):
+    def __init__(self, target: discord.Member, invoker: discord.Member, custom_msg: str):
+        opts = [
+            discord.SelectOption(label="10s",   value="10",  description="Wakeup rapide"),
+            discord.SelectOption(label="30s",   value="30",  description="Wakeup moyen"),
+            discord.SelectOption(label="1 min", value="60",  description="Wakeup intense"),
+            discord.SelectOption(label="2 min", value="120", description="Wakeup long"),
+            discord.SelectOption(label="5 min", value="300", description="Wakeup extrême 💀"),
+            discord.SelectOption(label="Durée personnalisée...", value="custom",
+                                 description="Entrer le nombre de secondes à la main"),
+        ]
+        super().__init__(placeholder="Choisir la durée du wakeup...", options=opts)
+        self.target     = target
+        self.invoker    = invoker
+        self.custom_msg = custom_msg
+
+    async def callback(self, i: discord.Interaction):
+        if self.values[0] == "custom":
+            await i.response.send_modal(
+                WakeupCustomDurationModal(self.target, self.invoker, self.custom_msg)
+            )
+        else:
+            duration = int(self.values[0])
+            await i.response.defer(ephemeral=True)
+            e = discord.Embed(
+                title="😈  Wakeup lancé !",
+                description=(
+                    f"**Cible :** {self.target.mention}\n"
+                    f"**Durée :** `{duration}s`\n"
+                    f"**Message :** {self.custom_msg or '*défaut*'}"
+                ),
+                color=C["orange"], timestamp=datetime.utcnow()
+            )
+            set_footer(e, self.invoker)
+            await i.followup.send(embed=e, ephemeral=True)
+            asyncio.create_task(
+                _run_wakeup(i.guild, self.target, self.invoker, self.custom_msg, duration)
+            )
+
+class WakeupDurationView(discord.ui.View):
+    def __init__(self, target, invoker, custom_msg):
+        super().__init__(timeout=30)
+        self.add_item(WakeupDurationSelect(target, invoker, custom_msg))
+
+
+class WakeupCustomDurationModal(discord.ui.Modal, title="Durée personnalisée"):
+    duree = discord.ui.TextInput(
+        label="Durée en secondes (ex: 45)",
+        placeholder="Entre un nombre entre 5 et 600",
+        max_length=4,
+        required=True
+    )
+    def __init__(self, target, invoker, custom_msg):
+        super().__init__()
+        self.target     = target
+        self.invoker    = invoker
+        self.custom_msg = custom_msg
+
+    async def on_submit(self, i: discord.Interaction):
+        try:
+            duration = int(self.duree.value.strip())
+            if not 5 <= duration <= 600:
+                raise ValueError
+        except ValueError:
+            return await i.response.send_message(
+                embed=embed_err("Durée invalide. Entre un nombre entre **5** et **600** secondes."),
+                ephemeral=True
+            )
+        await i.response.defer(ephemeral=True)
+        e = discord.Embed(
+            title="😈  Wakeup lancé !",
+            description=(
+                f"**Cible :** {self.target.mention}\n"
+                f"**Durée :** `{duration}s`\n"
+                f"**Message :** {self.custom_msg or '*défaut*'}"
+            ),
+            color=C["orange"], timestamp=datetime.utcnow()
+        )
+        set_footer(e, self.invoker)
+        await i.followup.send(embed=e, ephemeral=True)
+        asyncio.create_task(
+            _run_wakeup(i.guild, self.target, self.invoker, self.custom_msg, duration)
+        )
+
+
+# ── Modal principal wakeup ────────────────────────────────────────────
 class WakeupModal(discord.ui.Modal, title="Wakeup"):
     message = discord.ui.TextInput(
         label="Message personnalise (optionnel)",
@@ -1020,47 +1151,53 @@ class WakeupModal(discord.ui.Modal, title="Wakeup"):
         max_length=200
     )
     def __init__(self, target: discord.Member, invoker: discord.Member):
-        super().__init__(); self.target = target; self.invoker = invoker
+        super().__init__()
+        self.target  = target
+        self.invoker = invoker
 
     async def on_submit(self, i: discord.Interaction):
         if not await protection_check_i(i, self.target): return
+
         now = time.time()
         if not is_sys_plus(self.invoker.id):
             last = wakeup_cd.get(self.invoker.id, 0)
             if now - last < 300:
                 return await i.response.send_message(
-                    embed=embed_warn(f"Cooldown wakeup : encore **{int(300-(now-last))}s**."), ephemeral=True)
+                    embed=embed_warn(f"Cooldown wakeup : encore **{int(300-(now-last))}s**."),
+                    ephemeral=True
+                )
         if self.target.id in wakeup_active:
-            return await i.response.send_message(embed=embed_err("Cette personne est deja en wakeup."), ephemeral=True)
+            return await i.response.send_message(
+                embed=embed_err("Cette personne est deja en wakeup."), ephemeral=True
+            )
 
-        custom   = self.message.value.strip()
-        spam_msg = (f"{self.target.mention} {custom}" if custom
-                    else f"Reveille toi {self.target.mention} ! C'est {self.invoker.mention} qui te l'ordonne 😈")
-        wakeup_active.add(self.target.id)
-        wakeup_cd[self.invoker.id] = now
+        custom = self.message.value.strip()
 
-        e = embed_ok(f"Wakeup lance sur {self.target.mention} !")
-        set_footer(e, self.invoker)
-        await i.response.send_message(embed=e, ephemeral=True)
+        if is_sys_plus(self.invoker.id):
+            # Sys+ → choisir la durée
+            e = discord.Embed(
+                title="⚡  Wakeup Sys+ — Durée",
+                description=(
+                    f"**Cible :** {self.target.mention}\n"
+                    f"**Message :** {custom or '*défaut*'}\n\n"
+                    "Choisis la durée du wakeup ci-dessous."
+                ),
+                color=C["sys"], timestamp=datetime.utcnow()
+            )
+            set_footer(e, self.invoker)
+            await i.response.send_message(
+                embed=e,
+                view=WakeupDurationView(self.target, self.invoker, custom),
+                ephemeral=True
+            )
+        else:
+            # Normal → 10s directement
+            await i.response.defer(ephemeral=True)
+            e = embed_ok(f"Wakeup lance sur {self.target.mention} !")
+            set_footer(e, self.invoker)
+            await i.followup.send(embed=e, ephemeral=True)
+            asyncio.create_task(_run_wakeup(i.guild, self.target, self.invoker, custom, 10))
 
-        async def do_wakeup():
-            end = asyncio.get_event_loop().time() + 10
-            async def spam():
-                for _ in range(20):
-                    try: await self.target.send(spam_msg)
-                    except: pass
-                    await asyncio.sleep(0.5)
-            asyncio.create_task(spam())
-            vcs = list(i.guild.voice_channels)
-            while asyncio.get_event_loop().time() < end:
-                if self.target.voice and vcs:
-                    try: await self.target.move_to(random.choice(vcs))
-                    except: pass
-                await asyncio.sleep(0.3)
-            try: await self.target.move_to(None)
-            except: pass
-            wakeup_active.discard(self.target.id)
-        asyncio.create_task(do_wakeup())
 
 @tree.command(name="wakeup", description="Wakeup un membre - spam + deplace en vocal (Server WL)")
 @app_commands.describe(membre="Le membre a wakeup")
@@ -1071,6 +1208,9 @@ async def wakeup_slash(i: discord.Interaction, membre: discord.Member):
         return await i.response.send_message(embed=embed_err("Tu n'as pas la **Server WL**."), ephemeral=True)
     await i.response.send_modal(WakeupModal(membre, i.user))
 
+# ══════════════════════════════════════════════════════════════════════
+#  /snap
+# ══════════════════════════════════════════════════════════════════════
 class SnapResponseModal(discord.ui.Modal, title="Donner mon Snapchat"):
     snap = discord.ui.TextInput(label="Ton Snapchat", placeholder="ton_snap", max_length=50)
     def __init__(self, demandeur: discord.Member):
@@ -1117,6 +1257,9 @@ async def snap_slash(i: discord.Interaction, membre: discord.Member, message: st
     except:
         await i.response.send_message(embed=embed_err("Impossible d'envoyer le MP (DMs fermes)."), ephemeral=True)
 
+# ══════════════════════════════════════════════════════════════════════
+#  /tipeu
+# ══════════════════════════════════════════════════════════════════════
 @tree.command(name="tipeu", description="Rename en S et verrouille le pseudo (Server WL)")
 @app_commands.describe(membre="La cible")
 async def tipeu_slash(i: discord.Interaction, membre: discord.Member):
