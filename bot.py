@@ -119,8 +119,14 @@ def check_wl_sys():
 async def on_ready():
     await tree.sync()
     print(f"✅ {bot.user} connecté (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching, name="Sys+ | &help"))
+    await bot.change_presence(
+        status=discord.Status.online,
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="Shotojo 🌸 #🇯🇵",
+            state="Nous vous préparons de grandes choses"
+        )
+    )
 
 @bot.event
 async def on_member_update(before, after):
@@ -408,14 +414,46 @@ class VoiceVIPMainPanel(discord.ui.View):
         embed = discord.Embed(title="👥 Whitelists", description=f"{total} WL active(s).", color=0x5865F2)
         await i.response.send_message(embed=embed, view=WLSubPanel(self.guild), ephemeral=True)
 
-@bot.command(name="voicevip")
+def build_wlpanel_embed(guild):
+    """Embed du panel WL — comptage par personne (1 personne = 1 même avec plusieurs WL)."""
+    voicevip_p = set()
+    server_p   = set()
+    sys_p      = set()
+    priv_p     = set()
+
+    # Sys+ comptés dans toutes les catégories
+    for uid in SYS_PLUS_IDS:
+        if guild.get_member(uid):
+            voicevip_p.add(uid); server_p.add(uid); sys_p.add(uid)
+
+    for uid, wls in whitelisted.items():
+        if "voicevip"  in wls: voicevip_p.add(uid)
+        if "server"    in wls: server_p.add(uid)
+        if "sys"       in wls: sys_p.add(uid)
+        if "privilege" in wls: priv_p.add(uid)
+
+    embed = discord.Embed(title="🎛️ Panel WL — Sys+", color=0x5865F2)
+    embed.add_field(name="🎤 VoiceVIP",          value=f"**{len(voicevip_p)}** personne(s)", inline=True)
+    embed.add_field(name="🌐 Server",             value=f"**{len(server_p)}** personne(s)",  inline=True)
+    embed.add_field(name="⚡ WL Sys",             value=f"**{len(sys_p)}** personne(s)",     inline=True)
+    embed.add_field(name="👑 Privilege",          value=f"**{len(priv_p)}** personne(s)",    inline=True)
+    embed.add_field(name="🔒 Vocs privées",       value=str(len(private_vocs)),              inline=True)
+    embed.add_field(name="🐕 Laisses actives",    value=str(len(laisse_active)),             inline=True)
+    embed.add_field(name="🏃 Follows actifs",     value=str(len(follow_active)),             inline=True)
+    embed.set_footer(text="1 personne = 1 comptée par WL même si elle en a plusieurs")
+    return embed
+
+@bot.command(name="wlpanel")
 @check_sys_plus()
-async def voicevip_panel(ctx):
-    embed = discord.Embed(title="🎛️ Panel VoiceVIP — Sys+", color=0x5865F2)
-    embed.add_field(name="🔒 Vocs privées", value=str(len(private_vocs)), inline=True)
-    embed.add_field(name="🐕 Laisses", value=str(len(laisse_active)), inline=True)
-    embed.add_field(name="🏃 Follows", value=str(len(follow_active)), inline=True)
-    embed.add_field(name="👥 WL", value=str(sum(len(v) for v in whitelisted.values())), inline=True)
+async def wlpanel_cmd(ctx):
+    embed = build_wlpanel_embed(ctx.guild)
+    await ctx.reply(embed=embed, view=VoiceVIPMainPanel(ctx.guild))
+
+@bot.command(name="restartpanel")
+@check_sys_plus()
+async def restartpanel_cmd(ctx):
+    embed = build_wlpanel_embed(ctx.guild)
+    embed.title = "🔄 Panel WL — Redémarré"
     await ctx.reply(embed=embed, view=VoiceVIPMainPanel(ctx.guild))
 
 # ════════════════════════════════════════════════════════════════
@@ -795,13 +833,26 @@ async def tipeu_slash(i: discord.Interaction, membre: discord.Member):
         await i.response.send_message("❌ Impossible de changer le pseudo.", ephemeral=True)
 
 # ════════════════════════════════════════════════════════════════
+#  &restartbot — Sys+ uniquement
+# ════════════════════════════════════════════════════════════════
+@bot.command(name="restartbot")
+@check_sys_plus()
+async def restartbot_cmd(ctx):
+    await ctx.reply(embed=discord.Embed(
+        title="🔄 Redémarrage...",
+        description="Le bot va redémarrer. Les commandes `/` seront synchronisées au retour. ⏳",
+        color=0xFFA500))
+    await asyncio.sleep(1)
+    await bot.close()
+
+# ════════════════════════════════════════════════════════════════
 #  &help / =help
 # ════════════════════════════════════════════════════════════════
 @bot.command(name="help")
 async def help_cmd(ctx):
     embed = discord.Embed(title="📖 Commandes", color=0x5865F2)
     if is_sys_plus(ctx.author.id):
-        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&voicevip` `&clear` `&derank`\n*+ toutes les commandes `=` et `/`*", inline=False)
+        embed.add_field(name="⭐ Sys+ (&)", value="`&wl` `&wlpanel` `&restartpanel` `&restartbot` `&clear` `&derank`\n*+ toutes les commandes `=` et `/`*", inline=False)
     if has_voicevip(ctx.author.id):
         embed.add_field(name="🎤 VoiceVIP (=)", value="`=laisse` `=pv` `=acces` `=join` `=mv` `=pvlist` `=menotte`", inline=False)
     if has_wl_sys(ctx.author.id):
