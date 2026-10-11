@@ -1531,7 +1531,14 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
 
     locked_channels[channel.id] = saved_overwrites
 
-    for uid in SYS_PLUS_IDS:
+    # Construire la liste des UIDs autorisés à écrire :
+    # Sys+ (hardcodés) + tous les membres qui ont la WL "sys" dans whitelisted
+    allowed_uids = set(SYS_PLUS_IDS)
+    for uid, wls in whitelisted.items():
+        if "sys" in wls:
+            allowed_uids.add(uid)
+
+    for uid in allowed_uids:
         member = ctx.guild.get_member(uid)
         if member:
             await channel.set_permissions(member,
@@ -1547,7 +1554,7 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         title="🔒  Salon verrouillé",
         description=(
             f"{channel.mention} est désormais **en lecture seule**.\n"
-            "Seuls les **Sys+** peuvent écrire.\n\n"
+            "Seuls les **Sys+** et **WL Sys** peuvent écrire.\n\n"
             "Refais `&lock` pour déverrouiller."
         ),
         color=C["maint"], timestamp=datetime.utcnow()
@@ -1560,7 +1567,7 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     if channel != ctx.channel:
         try:
             await channel.send(embed=discord.Embed(
-                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.",
+                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ et WL Sys peuvent écrire.",
                 color=C["maint"]
             ))
         except: pass
