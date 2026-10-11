@@ -408,7 +408,7 @@ async def maintenance_cmd(ctx):
     global maintenance
     maintenance = not maintenance
     if maintenance:
-        await bot.change_presence(status=discord.Status.do_not_disturb, activity=discord.Game("🔧 Maintenance"))
+        await bot.change_presence(status=discord.Status.do_not_disturb, activity=discord.Game("🔧 Maintenance en cours"))
         e = discord.Embed(title="🔧  Maintenance activee", description="Toutes les commandes sont **bloquees** pour les non-Sys+.\nLe bot reviendra bientot.", color=C["maint"], timestamp=datetime.utcnow())
         set_footer(e, ctx.author)
         await ctx.reply(embed=e)
