@@ -327,7 +327,11 @@ async def on_ready():
 
 @bot.event
 async def on_message_delete(message):
+    # Ignorer les bots et les messages vides
+    # Ignorer aussi la commande =snipe elle-même pour ne pas la capturer
     if message.author.bot or not message.content:
+        return
+    if message.content.strip().lower().startswith("=snipe"):
         return
     snipe_cache[message.channel.id] = {
         "content":     message.content,
@@ -721,7 +725,7 @@ async def clear_cmd(ctx, amount: int = 50):
             ("📌 Salon",              ctx.channel.mention),
         ],
     ))
-    await asyncio.sleep(3)
+    await asyncio.sleep(1.5)
     await msg.delete()
 
 @bot.command(name="derank")
@@ -1470,35 +1474,35 @@ async def ui_cmd(ctx, member: discord.Member = None):
         return await ctx.reply(embed=embed_warn("Le bot est en **maintenance**."))
     member = member or ctx.author
 
-    # Statut
+    # ── Statut ──
     status_map = {
-        discord.Status.online:       ("🟢", "En ligne"),
-        discord.Status.idle:         ("🟡", "Absent"),
-        discord.Status.dnd:          ("🔴", "Ne pas déranger"),
-        discord.Status.offline:      ("⚫", "Hors ligne"),
-        discord.Status.invisible:    ("⚫", "Invisible"),
+        discord.Status.online:    ("🟢", "En ligne"),
+        discord.Status.idle:      ("🟡", "Absent"),
+        discord.Status.dnd:       ("🔴", "Ne pas déranger"),
+        discord.Status.offline:   ("⚫", "Hors ligne"),
+        discord.Status.invisible: ("⚫", "Invisible"),
     }
     status_icon, status_label = status_map.get(member.status, ("⚫", "Hors ligne"))
 
-    # Plateforme
+    # ── Plateforme ──
     platforms = []
-    if member.desktop_status != discord.Status.offline: platforms.append("🖥️ Bureau")
-    if member.mobile_status  != discord.Status.offline: platforms.append("📱 Mobile")
-    if member.web_status     != discord.Status.offline: platforms.append("🌐 Web")
+    if member.desktop_status != discord.Status.offline: platforms.append("🖥️")
+    if member.mobile_status  != discord.Status.offline: platforms.append("📱")
+    if member.web_status     != discord.Status.offline: platforms.append("🌐")
     platform_str = "  ".join(platforms) if platforms else "—"
 
-    # Activité
+    # ── Activité ──
     activity_str = "—"
     if member.activities:
         for act in member.activities:
-            if isinstance(act, discord.Game):
-                activity_str = f"🎮 {act.name}"
+            if isinstance(act, discord.Spotify):
+                activity_str = f"🎵 **{act.title}** — {act.artist}"
                 break
             elif isinstance(act, discord.Streaming):
-                activity_str = f"🔴 {act.name}"
+                activity_str = f"🔴 [{act.name}]({act.url})" if act.url else f"🔴 {act.name}"
                 break
-            elif isinstance(act, discord.Spotify):
-                activity_str = f"🎵 {act.title} — {act.artist}"
+            elif isinstance(act, discord.Game):
+                activity_str = f"🎮 {act.name}"
                 break
             elif isinstance(act, discord.CustomActivity) and act.name:
                 activity_str = f"💬 {act.name}"
@@ -1507,49 +1511,65 @@ async def ui_cmd(ctx, member: discord.Member = None):
                 activity_str = f"🕹️ {act.name}"
                 break
 
-    # Vocal
+    # ── Vocal ──
     if member.voice and member.voice.channel:
-        voice_str = f"🔊 {member.voice.channel.name}"
+        vc = member.voice.channel
+        vc_link = f"https://discord.com/channels/{ctx.guild.id}/{vc.id}"
+        voice_str = f"[🔊 **{vc.name}**]({vc_link})  ·  `{len(vc.members)}` membre(s)"
     else:
-        voice_str = "Pas en vocal\n—"
+        voice_str = "*Pas en vocal*"
 
-    # Dates
+    # ── Dates ──
     created_ts = int(member.created_at.timestamp())
     joined_ts  = int(member.joined_at.timestamp()) if member.joined_at else None
 
-    # Rôles (sans @everyone)
+    # ── Rôles (sans @everyone, max 12) ──
     roles = [r for r in reversed(member.roles) if r != ctx.guild.default_role]
-    roles_str = "  ".join(r.mention for r in roles[:10]) if roles else "*Aucun*"
+    if roles:
+        roles_str = "  ".join(r.mention for r in roles[:12])
+        if len(roles) > 12:
+            roles_str += f"  *+{len(roles)-12}*"
+    else:
+        roles_str = "*Aucun rôle*"
 
-    e = discord.Embed(color=member.color if member.color.value else C["dark"], timestamp=datetime.utcnow())
+    # ── Couleur embed : couleur du rôle le plus haut ou fallback ──
+    embed_color = member.color if member.color.value else discord.Color(0x2b2d31)
+
+    e = discord.Embed(color=embed_color, timestamp=datetime.utcnow())
     e.set_author(name=member.display_name, icon_url=member.display_avatar.url)
     e.set_thumbnail(url=member.display_avatar.url)
 
-    e.add_field(name="Compte",        value=f"@{member.name}", inline=False)
+    e.add_field(
+        name="👤  Compte",
+        value=f"`@{member.name}`  ·  `{member.id}`",
+        inline=False,
+    )
+    e.add_field(
+        name="📋  Informations",
+        value=(
+            f"**Surnom :** {member.display_name}\n"
+            f"**Mention :** {member.mention}\n"
+            f"**Bot :** {'Oui' if member.bot else 'Non'}"
+        ),
+        inline=True,
+    )
+    e.add_field(
+        name="📡  Activité / Statut",
+        value=(
+            f"**Statut :** {status_icon} {status_label}\n"
+            f"**Plateforme :** {platform_str}\n"
+            f"**Activité :** {activity_str}"
+        ),
+        inline=True,
+    )
+    e.add_field(name="​", value="", inline=False)
+    e.add_field(name="🎙️  Vocal", value=voice_str, inline=False)
 
-    e.add_field(name="Informations",  value=(
-        f"**Pseudo :** {member.display_name}\n"
-        f"**Id :** {member.id}"
-    ), inline=True)
-
-    e.add_field(name="Activité/Statut", value=(
-        f"**Statut :** {status_icon} {status_label}\n"
-        f"**Plateforme :** {platform_str}\n"
-        f"**Activité :**\n{activity_str}"
-    ), inline=True)
-
-    e.add_field(name="\u200b", value="\u200b", inline=False)
-
-    e.add_field(name="Vocal", value=voice_str, inline=False)
-
-    e.add_field(name="\u200b", value="\u200b", inline=False)
-
-    dates_val = f"**Créé :** <t:{created_ts}:D>  ( <t:{created_ts}:R> )\n"
+    dates_val = f"**Créé :** <t:{created_ts}:D>  ·  <t:{created_ts}:R>\n"
     if joined_ts:
-        dates_val += f"**Rejoint :** <t:{joined_ts}:D>  ( <t:{joined_ts}:R> )"
-    e.add_field(name="Dates", value=dates_val, inline=False)
-
-    e.add_field(name="Rôles", value=roles_str, inline=False)
+        dates_val += f"**Rejoint :** <t:{joined_ts}:D>  ·  <t:{joined_ts}:R>"
+    e.add_field(name="📅  Dates", value=dates_val, inline=False)
+    e.add_field(name=f"🏷️  Rôles  [{len(roles)}]", value=roles_str, inline=False)
 
     set_footer(e, ctx.author)
     await ctx.reply(embed=e)
@@ -1561,13 +1581,14 @@ async def snipe_cmd(ctx):
     if maintenance and not is_sys_plus(ctx.author.id):
         return await ctx.reply(embed=embed_warn("Le bot est en **maintenance**."))
 
-    # Supprimer la commande elle-même en arrière-plan
+    data = snipe_cache.get(ctx.channel.id)
+
+    # Supprimer la commande =snipe APRÈS avoir lu le cache
     try:
         await ctx.message.delete()
     except Exception:
         pass
 
-    data = snipe_cache.get(ctx.channel.id)
     if not data:
         e = embed_warn("Aucun message supprimé récemment dans ce salon.")
         set_footer(e)
@@ -1579,13 +1600,12 @@ async def snipe_cmd(ctx):
 
     deleted_ts = int(data["deleted_at"].timestamp())
     e = discord.Embed(
-        description=data["content"],
-        color=C["dark"],
+        description=f">>> {data['content']}",
+        color=0x2b2d31,
         timestamp=datetime.utcnow(),
     )
     e.set_author(name=data["author"], icon_url=data["author_icon"])
-    e.set_footer(text=f"Supprimé  •  <t:{deleted_ts}:R>")
-    e.add_field(name="Supprimé", value=f"<t:{deleted_ts}:R>", inline=True)
+    e.set_footer(text=f"🗑️  Supprimé  ·  {datetime.utcfromtimestamp(deleted_ts).strftime('%H:%M:%S')}")
 
     msg = await ctx.send(embed=e)
     await asyncio.sleep(3)
