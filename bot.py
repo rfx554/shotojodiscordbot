@@ -1496,6 +1496,9 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     existing_targets = list(channel.overwrites.keys())
 
     for target in existing_targets:
+        # Ne pas toucher @everyone, les bots, ni les rôles gérés
+        if target == everyone:
+            continue
         is_bot_member = isinstance(target, discord.Member) and target.bot
         is_bot_role   = isinstance(target, discord.Role) and target.managed
         if is_bot_member or is_bot_role:
@@ -1514,20 +1517,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         new_ow.add_reactions               = False
         new_ow.use_application_commands    = False
         await channel.set_permissions(target, overwrite=new_ow)
-
-    everyone_ow = channel.overwrites_for(everyone)
-    if everyone not in saved_overwrites:
-        saved_overwrites[everyone] = everyone_ow if not everyone_ow.is_empty() else None
-    new_everyone = discord.PermissionOverwrite(
-        view_channel=True,
-        send_messages=False,
-        send_messages_in_threads=False,
-        create_public_threads=False,
-        create_private_threads=False,
-        add_reactions=False,
-        use_application_commands=False,
-    )
-    await channel.set_permissions(everyone, overwrite=new_everyone)
 
     locked_channels[channel.id] = saved_overwrites
 
@@ -1554,7 +1543,7 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         title="🔒  Salon verrouillé",
         description=(
             f"{channel.mention} est désormais **en lecture seule**.\n"
-            "Seuls les **Sys+** et **WL Sys** peuvent écrire.\n\n"
+            "Seuls les **Sys+** peuvent écrire.\n\n"
             "Refais `&lock` pour déverrouiller."
         ),
         color=C["maint"], timestamp=datetime.utcnow()
@@ -1567,7 +1556,7 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     if channel != ctx.channel:
         try:
             await channel.send(embed=discord.Embed(
-                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ et WL Sys peuvent écrire.",
+                description="🔒  Ce salon est **en lecture seule** — seuls les Sys+ peuvent écrire.",
                 color=C["maint"]
             ))
         except: pass
