@@ -220,6 +220,7 @@ menotte_cd      = {}
 locked_nicks    = set()
 locked_channels = {}
 maintenance     = False
+snipe_cache     = {}   # channel_id -> {"content", "author", "author_icon", "deleted_at"}
 
 # ══════════════════════════════════════════════════════════════════════
 #  BOT
@@ -323,6 +324,17 @@ async def on_ready():
         status=discord.Status.online,
         activity=discord.Activity(type=discord.ActivityType.watching, name="Shotojo 🌸 #🇯🇵")
     )
+
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot or not message.content:
+        return
+    snipe_cache[message.channel.id] = {
+        "content":     message.content,
+        "author":      str(message.author),
+        "author_icon": message.author.display_avatar.url,
+        "deleted_at":  datetime.utcnow(),
+    }
 
 @bot.event
 async def on_member_update(before, after):
@@ -1448,6 +1460,140 @@ async def tipeu_slash(i, membre: discord.Member):
         await i.response.send_message(embed=embed_err("Impossible de changer son pseudo."), ephemeral=True)
 
 # ══════════════════════════════════════════════════════════════════════
+#  COMMANDES LIBERTÉ (accessibles à tous)
+# ══════════════════════════════════════════════════════════════════════
+
+@bot.command(name="ui")
+async def ui_cmd(ctx, member: discord.Member = None):
+    """Affiche les infos d'un membre (ou de soi-même)."""
+    if maintenance and not is_sys_plus(ctx.author.id):
+        return await ctx.reply(embed=embed_warn("Le bot est en **maintenance**."))
+    member = member or ctx.author
+
+    # Statut
+    status_map = {
+        discord.Status.online:       ("🟢", "En ligne"),
+        discord.Status.idle:         ("🟡", "Absent"),
+        discord.Status.dnd:          ("🔴", "Ne pas déranger"),
+        discord.Status.offline:      ("⚫", "Hors ligne"),
+        discord.Status.invisible:    ("⚫", "Invisible"),
+    }
+    status_icon, status_label = status_map.get(member.status, ("⚫", "Hors ligne"))
+
+    # Plateforme
+    platforms = []
+    if member.desktop_status != discord.Status.offline: platforms.append("🖥️ Bureau")
+    if member.mobile_status  != discord.Status.offline: platforms.append("📱 Mobile")
+    if member.web_status     != discord.Status.offline: platforms.append("🌐 Web")
+    platform_str = "  ".join(platforms) if platforms else "—"
+
+    # Activité
+    activity_str = "—"
+    if member.activities:
+        for act in member.activities:
+            if isinstance(act, discord.Game):
+                activity_str = f"🎮 {act.name}"
+                break
+            elif isinstance(act, discord.Streaming):
+                activity_str = f"🔴 {act.name}"
+                break
+            elif isinstance(act, discord.Spotify):
+                activity_str = f"🎵 {act.title} — {act.artist}"
+                break
+            elif isinstance(act, discord.CustomActivity) and act.name:
+                activity_str = f"💬 {act.name}"
+                break
+            elif isinstance(act, discord.Activity):
+                activity_str = f"🕹️ {act.name}"
+                break
+
+    # Vocal
+    if member.voice and member.voice.channel:
+        voice_str = f"🔊 {member.voice.channel.name}"
+    else:
+        voice_str = "Pas en vocal\n—"
+
+    # Dates
+    created_ts = int(member.created_at.timestamp())
+    joined_ts  = int(member.joined_at.timestamp()) if member.joined_at else None
+
+    # Rôles (sans @everyone)
+    roles = [r for r in reversed(member.roles) if r != ctx.guild.default_role]
+    roles_str = "  ".join(r.mention for r in roles[:10]) if roles else "*Aucun*"
+
+    e = discord.Embed(color=member.color if member.color.value else C["dark"], timestamp=datetime.utcnow())
+    e.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+    e.set_thumbnail(url=member.display_avatar.url)
+
+    e.add_field(name="Compte",        value=f"@{member.name}", inline=False)
+
+    e.add_field(name="Informations",  value=(
+        f"**Pseudo :** {member.display_name}\n"
+        f"**Id :** {member.id}"
+    ), inline=True)
+
+    e.add_field(name="Activité/Statut", value=(
+        f"**Statut :** {status_icon} {status_label}\n"
+        f"**Plateforme :** {platform_str}\n"
+        f"**Activité :**\n{activity_str}"
+    ), inline=True)
+
+    e.add_field(name="\u200b", value="\u200b", inline=False)
+
+    e.add_field(name="Vocal", value=voice_str, inline=False)
+
+    e.add_field(name="\u200b", value="\u200b", inline=False)
+
+    dates_val = f"**Créé :** <t:{created_ts}:D>  ( <t:{created_ts}:R> )\n"
+    if joined_ts:
+        dates_val += f"**Rejoint :** <t:{joined_ts}:D>  ( <t:{joined_ts}:R> )"
+    e.add_field(name="Dates", value=dates_val, inline=False)
+
+    e.add_field(name="Rôles", value=roles_str, inline=False)
+
+    set_footer(e, ctx.author)
+    await ctx.reply(embed=e)
+
+
+@bot.command(name="snipe")
+async def snipe_cmd(ctx):
+    """Affiche le dernier message supprimé dans ce salon."""
+    if maintenance and not is_sys_plus(ctx.author.id):
+        return await ctx.reply(embed=embed_warn("Le bot est en **maintenance**."))
+
+    # Supprimer la commande elle-même en arrière-plan
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+
+    data = snipe_cache.get(ctx.channel.id)
+    if not data:
+        e = embed_warn("Aucun message supprimé récemment dans ce salon.")
+        set_footer(e)
+        msg = await ctx.send(embed=e)
+        await asyncio.sleep(3)
+        try: await msg.delete()
+        except: pass
+        return
+
+    deleted_ts = int(data["deleted_at"].timestamp())
+    e = discord.Embed(
+        description=data["content"],
+        color=C["dark"],
+        timestamp=datetime.utcnow(),
+    )
+    e.set_author(name=data["author"], icon_url=data["author_icon"])
+    e.set_footer(text=f"Supprimé  •  <t:{deleted_ts}:R>")
+    e.add_field(name="Supprimé", value=f"<t:{deleted_ts}:R>", inline=True)
+
+    msg = await ctx.send(embed=e)
+    await asyncio.sleep(3)
+    try: await msg.delete()
+    except: pass
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  &help
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="help")
@@ -1463,6 +1609,7 @@ async def help_cmd(ctx):
         e.add_field(name="⚡  WL Sys  [ = ]", value="`=follow`  `=pvsys`  *(+ toutes les commandes VoiceVIP)*", inline=False)
     if has_server(ctx.author.id):
         e.add_field(name="🌐  Server  [ = / ]", value="`=laisse`  `=mp`  `/dog-add`  `/dog-del`  `/wakeup`  `/snap`  `/tipeu`", inline=False)
+    e.add_field(name="🍃  Liberté  [ = ]", value="`=ui`  `=snipe`", inline=False)
     if not e.fields:
         e.description = "> Tu n'as acces a aucune commande."
     e.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
