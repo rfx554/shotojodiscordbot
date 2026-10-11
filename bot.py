@@ -1604,20 +1604,21 @@ async def renew_cmd(ctx, channel: discord.TextChannel = None):
 
 # ══════════════════════════════════════════════════════════════════════
 #  &dmall
-#  Usage 1 : &dmall @user message          → DM tout le serveur
-#  Usage 2 : &dmall @user message @role    → DM uniquement les membres
+#  Usage 1 : &dmall message              → DM tout le serveur
+#  Usage 2 : &dmall message ID_ROLE      → DM uniquement les membres
 #             qui ont ce rôle
-#  Dans le message, @user est remplacé par le ping individuel de chaque
-#  destinataire.
+#  Dans le message, écris {user} où tu veux le ping du destinataire.
+#  Exemple : &dmall salut {user} ! 155608167...
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="dmall")
 @check_sys_plus()
-async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
-    if not target or not message:
+async def dmall_cmd(ctx, *, message: str = None):
+    if not message:
         return await ctx.reply(embed=embed_err(
-            "Usage : `&dmall @user message [@role]`\n"
-            "> `@user` → remplacé par le ping de chaque destinataire\n"
-            "> `@role` *(optionnel)* → envoie uniquement aux membres qui ont ce rôle"
+            "Usage : `&dmall message [ID_rôle]`\n"
+            "> Écris `{user}` dans le message → remplacé par le ping de chaque destinataire\n"
+            "> Ajoute un **ID de rôle** à la fin pour cibler uniquement ses membres\n"
+            "> Exemple : `&dmall salut {user} ! 123456789012345678`"
         ))
 
     # ── Détecter si le message se termine par un ID de rôle ──────
@@ -1639,13 +1640,16 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
     if not members:
         return await ctx.reply(embed=embed_warn("Aucun membre trouvé pour cet envoi."))
 
+    # ── Aperçu du message avec un vrai exemple ────────────────────
+    preview = message.replace("{user}", members[0].mention if members else "@quelqu'un")
+
     # ── Embed de confirmation ──────────────────────────────────────
     confirm_e = discord.Embed(
         title="📨  Confirmer l'envoi",
         description=(
             f"Tu vas envoyer un DM à **{len(members)}** membres ({scope_txt}).\n\n"
-            f"**Message :**\n> {message[:300]}\n\n"
-            f"**`@user` remplacé par :** mention individuelle de chaque destinataire\n\n"
+            f"**Message brut :**\n> {message[:300]}\n\n"
+            f"**Aperçu (premier destinataire) :**\n> {preview[:300]}\n\n"
             "Clique **Confirmer** pour lancer l'envoi."
         ),
         color=C["warn"], timestamp=datetime.utcnow()
@@ -1684,8 +1688,6 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
         return await confirm_msg.edit(embed=embed_warn("Envoi annulé."), view=None)
 
     # ── Envoi ──────────────────────────────────────────────────────
-    target_mention = target.mention
-
     progress_e = discord.Embed(
         title="📨  Envoi en cours…",
         description=f"Envoi à **{len(members)}** membres…",
@@ -1698,7 +1700,7 @@ async def dmall_cmd(ctx, target: discord.Member = None, *, message: str = None):
     fail_count = 0
 
     for m in members:
-        personalized = message.replace(target_mention, m.mention)
+        personalized = message.replace("{user}", m.mention)
         try:
             await m.send(personalized)
             ok_count += 1
