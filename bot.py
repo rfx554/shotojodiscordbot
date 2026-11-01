@@ -731,7 +731,14 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
     sys_bonus = len(SYS_PLUS_IDS)
 
     vvip_total   = manual_vvip  + sys_bonus
-    server_total = manual_server + og_count + sys_bonus  # OG comptés ici
+    # WL server manuelle HORS rôle OG (évite le double comptage)
+    og_role = guild.get_role(OG_ROLE_ID)
+    og_ids  = {m.id for m in og_role.members if not m.bot} if og_role else set()
+    manual_server_extra = sum(
+        1 for uid, v in whitelisted.items()
+        if "server" in v and uid not in og_ids and uid not in SYS_PLUS_IDS
+    )
+    server_total = og_count + manual_server_extra + sys_bonus
     sys_total    = manual_sys   + sys_bonus
     priv_total   = manual_priv
 
