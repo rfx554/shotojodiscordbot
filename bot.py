@@ -1519,6 +1519,67 @@ async def removerole_slash(i: discord.Interaction, role: discord.Role, tous: boo
         except discord.Forbidden:
             await i.response.send_message(embed=embed_err("Impossible de retirer ce rôle."), ephemeral=True)
 
+@tree.command(name="rollbackrole", description="Annule un /addrole tous via les logs d'audit (Sys+)")
+@app_commands.describe(
+    role="Le rôle à retirer",
+    minutes="Fenêtre de recherche en minutes (défaut 120)",
+    confirmer="False = simulation, True = exécute vraiment",
+)
+async def rollbackrole_slash(i: discord.Interaction, role: discord.Role, minutes: int = 120, confirmer: bool = False):
+    if not is_sys_plus(i.user.id):
+        return await i.response.send_message(embed=embed_err("Réservé aux **Sys+**."), ephemeral=True)
+    if role >= i.guild.me.top_role:
+        return await i.response.send_message(embed=embed_err("Ce rôle est trop haut pour moi."), ephemeral=True)
+
+    await i.response.defer(thinking=True, ephemeral=True)
+    since = discord.utils.utcnow() - timedelta(minutes=minutes)
+
+    # Membres à qui LE BOT a ajouté ce rôle via /addrole tous
+    ids = set()
+    try:
+        async for en in i.guild.audit_logs(
+            limit=None,
+            action=discord.AuditLogAction.member_role_update,
+            user=i.guild.me,
+            after=since,
+        ):
+            if not (en.reason or "").startswith("/addrole tous"):
+                continue
+            added = [r.id for r in (getattr(en.after, "roles", None) or [])]
+            if role.id in added and en.target is not None:
+                ids.add(en.target.id)
+    except discord.Forbidden:
+        return await i.followup.send(
+            embed=embed_err("Il me faut la permission **Voir les logs du serveur**."), ephemeral=True)
+
+    members = [m for uid in ids if (m := i.guild.get_member(uid)) and role in m.roles]
+
+    if not confirmer:
+        return await i.followup.send(embed=embed_warn(
+            f"**Simulation** : **{len(members)}** membre(s) perdraient {role.mention}.\n"
+            f"Compare avec le `✅ OK` de ton /addrole. Si ça colle, relance avec `confirmer: True`."
+        ), ephemeral=True)
+
+    ok, fail = 0, 0
+    for m in members:
+        try:
+            await m.remove_roles(role, reason=f"/rollbackrole  {i.user}")
+            ok += 1
+        except Exception:
+            fail += 1
+
+    e = discord.Embed(title="↩️  Rollback effectué", color=C["orange"], timestamp=datetime.utcnow())
+    e.add_field(name="Rôle",  value=role.mention, inline=True)
+    e.add_field(name="✅ OK", value=f"`{ok}`",    inline=True)
+    e.add_field(name="❌ KO", value=f"`{fail}`",  inline=True)
+    footer(e, i.user)
+    await i.followup.send(embed=e, ephemeral=True)
+    asyncio.create_task(send_log(
+        i.guild, i.user, "removerole", "Rollback addrole tous",
+        [("⌨️ Commande", "`/rollbackrole`"), ("🎭 Rôle", role.mention), ("✅", f"`{ok}`"), ("❌", f"`{fail}`")],
+    ))
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  COMMANDES VOICEVIP  (=)
 # ══════════════════════════════════════════════════════════════════════
@@ -2363,7 +2424,7 @@ async def help_cmd(ctx):
             value=(
                 "`&wl`  `&wlpanel`  `&restartpanel`  `&maintenance`\n"
                 "`&clear`  `&derank`  `&rerank`  `&lock`  `&renew`\n"
-                "`/addrole`  `/removerole`\n"
+                "`/addrole`  `/removerole`  `/rollbackrole`\n"
                 "*· en répondant à un message, la commande cible son auteur*\n"
                 "*· toutes les commandes `=` et `/`*"
             ),
