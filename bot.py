@@ -24,27 +24,27 @@ CIVIL_ROLE_ID  = 1564722577060929546
 
 # ── Palette DA ────────────────────────────────────────────────────────
 C = {
-    "ok":       0x43B581,   # vert doux
-    "error":    0xF04747,   # rouge vif
-    "warn":     0xFAA61A,   # ambre
-    "info":     0x7289DA,   # bleu discord
-    "sys":      0xFF73FA,   # rose sys+
-    "orange":   0xFF7043,   # orange chaud
-    "maint":    0xFFB347,   # orange maintenance
-    "dark":     0x23272A,   # fond sombre
-    "purple":   0xA855F7,   # violet
-    "teal":     0x00BFA5,   # turquoise
-    "log":      0x2C2F33,   # gris logs
-    "gold":     0xF1C40F,   # or
-    "rose":     0xFF4081,   # rose vif
-    "navy":     0x3F51B5,   # bleu marine
-    "mint":     0x26A69A,   # vert menthe
+    "ok":       0x43B581,
+    "error":    0xF04747,
+    "warn":     0xFAA61A,
+    "info":     0x7289DA,
+    "sys":      0xFF73FA,
+    "orange":   0xFF7043,
+    "maint":    0xFFB347,
+    "dark":     0x23272A,
+    "purple":   0xA855F7,
+    "teal":     0x00BFA5,
+    "log":      0x2C2F33,
+    "gold":     0xF1C40F,
+    "rose":     0xFF4081,
+    "navy":     0x3F51B5,
+    "mint":     0x26A69A,
 }
 
-SEP = "┄" * 35  # séparateur visuel (jamais de —)
+SEP = "┄" * 35
 
 # ══════════════════════════════════════════════════════════════════════
-#  EMBED FACTORY  (nouvelle DA)
+#  EMBED FACTORY
 # ══════════════════════════════════════════════════════════════════════
 def _base(color: int) -> discord.Embed:
     return discord.Embed(color=color, timestamp=datetime.utcnow())
@@ -114,7 +114,7 @@ def save_wl() -> None:
         json.dump({str(k): v for k, v in whitelisted.items()}, f)
 
 # ══════════════════════════════════════════════════════════════════════
-#  SYSTÈME DE LOGS  (DA repensée)
+#  SYSTÈME DE LOGS
 # ══════════════════════════════════════════════════════════════════════
 LOG_META = {
     "snap":        ("📸", C["warn"]),
@@ -140,7 +140,7 @@ LOG_META = {
     "join":        ("📞", C["teal"]),
     "mv":          ("↗️",  C["teal"]),
     "pvsys":       ("🔒", C["navy"]),
-    "dmall":       ("📨", C["info"]),
+    "wl_masse":    ("👥", C["sys"]),
     "default":     ("📋", C["log"]),
 }
 
@@ -184,13 +184,13 @@ async def send_log(
 #  STOCKAGE EN MÉMOIRE
 # ══════════════════════════════════════════════════════════════════════
 whitelisted:     dict  = load_wl()
-private_vocs:    dict  = {}   # ch_id -> {owner, type}
-pv_access:       dict  = {}   # ch_id -> set(member_id)
-pv_violations:   dict  = {}   # member_id -> int (compteur d'intrusions)
-follow_active:   dict  = {}   # follower_id -> target_id
-laisse_active:   dict  = {}   # owner_id -> (target_id, new_nick, old_nick)
-dog_active:      dict  = {}   # owner_id -> (target_id, new_nick, old_nick)
-menotte_active:  dict  = {}   # owner_id -> (target_id, channel_id)
+private_vocs:    dict  = {}
+pv_access:       dict  = {}
+pv_violations:   dict  = {}
+follow_active:   dict  = {}
+laisse_active:   dict  = {}
+dog_active:      dict  = {}
+menotte_active:  dict  = {}
 wakeup_active:   set   = set()
 wakeup_cd:       dict  = {}
 dog_cd:          dict  = {}
@@ -198,7 +198,7 @@ menotte_cd:      dict  = {}
 locked_nicks:    set   = set()
 locked_channels: dict  = {}
 maintenance:     bool  = False
-snipe_cache:     dict  = {}   # ch_id -> {content, author, author_icon, deleted_at}
+snipe_cache:     dict  = {}
 
 WL_LABELS = {
     "voicevip":  ("🎤", "VoiceVIP",  C["purple"]),
@@ -226,7 +226,6 @@ def has_voicevip(uid): return uid in SYS_PLUS_IDS or "voicevip" in whitelisted.g
 def has_server(uid):   return uid in SYS_PLUS_IDS or "server"   in whitelisted.get(uid, [])
 def has_wl_sys(uid):   return uid in SYS_PLUS_IDS or "sys"      in whitelisted.get(uid, [])
 
-# Messages de protection
 MSG_OWNER = (
     "🫵💀  Frérot, j'ai crée le bot et t'essayes de me toucher ?\n"
     "La prochaine c TO 24h, tu feras un ticket pour te faire unto. 🎟️"
@@ -341,7 +340,6 @@ async def on_member_update(before, after):
 async def on_voice_state_update(member, before, after):
     guild = member.guild
 
-    # ── Follow ──
     for fid, tid in list(follow_active.items()):
         if member.id == tid and after.channel and after.channel != before.channel:
             follower = guild.get_member(fid)
@@ -351,7 +349,6 @@ async def on_voice_state_update(member, before, after):
                 except Exception:
                     pass
 
-    # ── Dog ──
     for oid, (cid, _, _) in list(dog_active.items()):
         if member.id == oid and after.channel and after.channel != before.channel:
             cible = guild.get_member(cid)
@@ -361,7 +358,6 @@ async def on_voice_state_update(member, before, after):
                 except Exception:
                     pass
 
-    # ── Menotte ──
     for oid, (cid, ch_id) in list(menotte_active.items()):
         if (
             member.id == cid
@@ -379,7 +375,6 @@ async def on_voice_state_update(member, before, after):
                         pass
                 asyncio.create_task(_remmenotter())
 
-    # ── Vocal privée : intrusion ──
     if after.channel and after.channel.id in private_vocs:
         ch_id    = after.channel.id
         pv_info  = private_vocs[ch_id]
@@ -395,13 +390,11 @@ async def on_voice_state_update(member, before, after):
         )
 
         if not authorized:
-            # 1. Éjecter immédiatement
             try:
                 await member.move_to(None)
             except Exception:
                 pass
 
-            # 2. Incrémenter les violations
             count = pv_violations.get(member.id, 0) + 1
             pv_violations[member.id] = count
 
@@ -413,7 +406,6 @@ async def on_voice_state_update(member, before, after):
             label = labels.get(pv_type, "Vocal privée")
 
             if count == 1:
-                # 1ère tentative : DM d'avertissement uniquement
                 try:
                     e = discord.Embed(
                         title=f"⛔  {label}",
@@ -429,7 +421,6 @@ async def on_voice_state_update(member, before, after):
                 except Exception:
                     pass
             else:
-                # 2ème tentative et plus : timeout progressif
                 timeout_minutes = min(count - 1, 60)
                 until = discord.utils.utcnow() + timedelta(minutes=timeout_minutes)
                 try:
@@ -452,7 +443,6 @@ async def on_voice_state_update(member, before, after):
                 except Exception:
                     pass
 
-    # ── Nettoyage PV si owner quitte ──
     if before.channel and before.channel.id in private_vocs:
         ch_id = before.channel.id
         if private_vocs[ch_id]["owner"] == member.id:
@@ -576,11 +566,10 @@ async def wl_cmd(ctx, member: discord.Member = None):
     await ctx.reply(embed=e, view=WLView(member, ctx.author))
 
 # ══════════════════════════════════════════════════════════════════════
-#  &wlpanel  — tableau de bord avec boutons par entrée
+#  &wlpanel
 # ══════════════════════════════════════════════════════════════════════
 
 def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
-    """Embed principal du tableau de bord."""
     total_wl = sum(len(v) for v in whitelisted.values())
 
     vvip = sum(1 for v in whitelisted.values() if "voicevip" in v) + len(SYS_PLUS_IDS)
@@ -597,7 +586,6 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
         timestamp=datetime.utcnow(),
     )
 
-    # Colonne WL
     e.add_field(
         name="🏷️  Whitelists",
         value=(
@@ -610,7 +598,6 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
         inline=True,
     )
 
-    # Colonne activités
     e.add_field(
         name="⚡  Actifs",
         value=(
@@ -633,7 +620,6 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
 # ── Vues par catégorie ────────────────────────────────────────────────
 
 class PVListView(discord.ui.View):
-    """Un bouton 🔓 par vocal privée."""
     def __init__(self, guild: discord.Guild, entries: list):
         super().__init__(timeout=120)
         self.guild = guild
@@ -776,7 +762,6 @@ class MenotteListView(discord.ui.View):
         for oid, (cid, ch_id) in entries:
             ow = guild.get_member(oid)
             ci = guild.get_member(cid)
-            ch = guild.get_channel(ch_id)
             label = f"🔓  {ow.display_name if ow else oid}  ⛓  {ci.display_name if ci else cid}"[:80]
             btn = _make_menotte_btn(label, oid, ow, ci, self)
             self.add_item(btn)
@@ -877,6 +862,156 @@ def _make_tipeu_btn(label, uid, member, view):
     return btn
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  WL MASSE PAR RÔLE  (select défilant)
+# ══════════════════════════════════════════════════════════════════════
+
+class WLMasseRoleSelect(discord.ui.Select):
+    """Étape 1 : choisir le rôle cible."""
+    def __init__(self, guild: discord.Guild, wl_type: str):
+        self.guild   = guild
+        self.wl_type = wl_type
+
+        # On prend les 25 premiers rôles non-managed, non-@everyone, triés par position décroissante
+        roles = [
+            r for r in guild.roles
+            if r != guild.default_role and not r.managed
+        ]
+        roles.sort(key=lambda r: r.position, reverse=True)
+        roles = roles[:25]
+
+        options = [
+            discord.SelectOption(
+                label=r.name[:100],
+                value=str(r.id),
+                description=f"{len(r.members)} membre(s)",
+                emoji="🎭",
+            )
+            for r in roles
+        ]
+        super().__init__(
+            placeholder="Choisir le rôle à WL en masse...",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not is_sys_plus(interaction.user.id):
+            return await interaction.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
+
+        role = self.guild.get_role(int(self.values[0]))
+        if not role:
+            return await interaction.response.send_message(embed=embed_err("Rôle introuvable."), ephemeral=True)
+
+        wl      = self.wl_type
+        icon, label, color = WL_LABELS[wl]
+        members = [m for m in role.members if not m.bot]
+
+        if not members:
+            return await interaction.response.send_message(
+                embed=embed_warn(f"Le rôle **{role.name}** n'a aucun membre."), ephemeral=True
+            )
+
+        # Attribuer la WL à chacun
+        ok_count   = 0
+        skip_count = 0
+        for m in members:
+            lst = whitelisted.setdefault(m.id, [])
+            if wl not in lst:
+                lst.append(wl)
+                ok_count += 1
+            else:
+                skip_count += 1
+        save_wl()
+
+        e = discord.Embed(
+            title=f"{icon}  WL masse  ·  {label}",
+            description=(
+                f"Rôle ciblé : {role.mention}\n"
+                f"**{ok_count}** membre(s) ont reçu la **{label}**.\n"
+                f"**{skip_count}** l'avaient déjà."
+            ),
+            color=color,
+            timestamp=datetime.utcnow(),
+        )
+        e.set_thumbnail(url=self.guild.icon.url if self.guild.icon else None)
+        footer(e, interaction.user)
+        await interaction.response.edit_message(embed=e, view=None)
+
+        asyncio.create_task(send_log(
+            self.guild, interaction.user, "wl_masse", f"WL masse  {label}",
+            [
+                ("⌨️ Commande", "`&wlpanel`"),
+                ("🏷️ WL",       f"`{wl}`  {icon}"),
+                ("🎭 Rôle",      f"{role.mention}  `{role.id}`"),
+                ("✅ Attribuées", f"`{ok_count}`"),
+                ("⏭️ Déjà WL",   f"`{skip_count}`"),
+            ],
+        ))
+
+        # DM à chaque nouveau WL
+        async def _notify():
+            for m in members:
+                if wl in whitelisted.get(m.id, []):
+                    try:
+                        dm = discord.Embed(
+                            title=f"{icon}  Nouvelle whitelist !",
+                            description=f"Tu as reçu la **{label}** sur **{self.guild.name}**.",
+                            color=color, timestamp=datetime.utcnow(),
+                        )
+                        dm.set_thumbnail(url=self.guild.icon.url if self.guild.icon else None)
+                        footer(dm)
+                        await m.send(embed=dm)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.5)
+        asyncio.create_task(_notify())
+
+
+class WLMasseTypeSelect(discord.ui.Select):
+    """Étape 0 : choisir le type de WL à attribuer en masse."""
+    def __init__(self, guild: discord.Guild):
+        self.guild = guild
+        options = [
+            discord.SelectOption(label="🎤 VoiceVIP",  value="voicevip",  description="Accès aux vocaux privés"),
+            discord.SelectOption(label="🌐 Server",    value="server",    description="Commandes server (dog, snap, wakeup...)"),
+            discord.SelectOption(label="⚡ WL Sys",    value="sys",       description="Commandes WL Sys (follow, pvsys...)"),
+            discord.SelectOption(label="👑 Privilege", value="privilege", description="Whitelist Privilege"),
+        ]
+        super().__init__(
+            placeholder="Choisir la WL à attribuer en masse...",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if not is_sys_plus(interaction.user.id):
+            return await interaction.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
+
+        wl_type = self.values[0]
+        icon, label, color = WL_LABELS[wl_type]
+
+        e = discord.Embed(
+            title=f"{icon}  WL masse  ·  {label}",
+            description="Choisis maintenant le **rôle** dont les membres recevront cette WL.",
+            color=color,
+            timestamp=datetime.utcnow(),
+        )
+        footer(e, interaction.user)
+        view = discord.ui.View(timeout=120)
+        view.add_item(WLMasseRoleSelect(self.guild, wl_type))
+        await interaction.response.edit_message(embed=e, view=view)
+
+
+class WLMasseView(discord.ui.View):
+    """Vue d'entrée pour la WL en masse."""
+    def __init__(self, guild: discord.Guild):
+        super().__init__(timeout=120)
+        self.add_item(WLMasseTypeSelect(guild))
+
+
 # ── Tableau de bord principal ─────────────────────────────────────────
 
 class WLPanelMainView(discord.ui.View):
@@ -896,7 +1031,6 @@ class WLPanelMainView(discord.ui.View):
         footer(e)
         return e
 
-    # ── Ligne 0 : vocaux privés ──────────────────────────────────
     @discord.ui.button(label="🔒 Vocaux privés", style=discord.ButtonStyle.blurple, row=0)
     async def btn_pv(self, i: discord.Interaction, b):
         entries = list(private_vocs.items())
@@ -912,13 +1046,12 @@ class WLPanelMainView(discord.ui.View):
                 f"🔒  **#{ch.name if ch else ch_id}**  `{info['type']}`\n"
                 f"   › Owner : {ow.mention if ow else info['owner']}"
             )
-        view = PVListView(self.guild, entries[:5])  # max 5 boutons Discord
+        view = PVListView(self.guild, entries[:5])
         await i.response.send_message(
             embed=self._cat_embed(f"🔒  Vocaux privés  ({len(entries)})", C["purple"], lines),
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 0 : laisses ────────────────────────────────────────
     @discord.ui.button(label="🐕 Laisses", style=discord.ButtonStyle.blurple, row=0)
     async def btn_laisse(self, i: discord.Interaction, b):
         entries = list(laisse_active.items())
@@ -938,7 +1071,6 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 0 : dogs ───────────────────────────────────────────
     @discord.ui.button(label="🐕 Dogs", style=discord.ButtonStyle.blurple, row=0)
     async def btn_dog(self, i: discord.Interaction, b):
         entries = list(dog_active.items())
@@ -949,7 +1081,7 @@ class WLPanelMainView(discord.ui.View):
             ow = self.guild.get_member(oid)
             ci = self.guild.get_member(cid)
             lines.append(
-                f"🐕  {ow.mention if ow else oid}  ›  {ci.mention if ci else cid}\n"
+                f"🐕  {ow.display_name if ow else oid}  ›  {ci.display_name if ci else cid}\n"
                 f"   › Pseudo : `{new_nick}`"
             )
         view = DogListView(self.guild, entries[:5])
@@ -958,7 +1090,6 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 1 : follows ────────────────────────────────────────
     @discord.ui.button(label="🏃 Follows", style=discord.ButtonStyle.blurple, row=1)
     async def btn_follow(self, i: discord.Interaction, b):
         entries = list(follow_active.items())
@@ -975,7 +1106,6 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 1 : menottes ───────────────────────────────────────
     @discord.ui.button(label="⛓️ Menottes", style=discord.ButtonStyle.blurple, row=1)
     async def btn_menotte(self, i: discord.Interaction, b):
         entries = list(menotte_active.items())
@@ -996,7 +1126,6 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 1 : tipeus ─────────────────────────────────────────
     @discord.ui.button(label="🔒 Tipeus", style=discord.ButtonStyle.blurple, row=1)
     async def btn_tipeu(self, i: discord.Interaction, b):
         entries = list(locked_nicks)
@@ -1012,7 +1141,6 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 2 : whitelists ─────────────────────────────────────
     @discord.ui.button(label="👥 Whitelists", style=discord.ButtonStyle.green, row=2)
     async def btn_wl(self, i: discord.Interaction, b):
         entries = [(uid, wl) for uid, wls in whitelisted.items() for wl in wls]
@@ -1029,7 +1157,21 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    # ── Ligne 2 : violations PV ──────────────────────────────────
+    @discord.ui.button(label="🎭 WL par rôle", style=discord.ButtonStyle.green, row=2)
+    async def btn_wl_masse(self, i: discord.Interaction, b):
+        """Attribuer une WL à tous les membres d'un rôle."""
+        e = discord.Embed(
+            title="🎭  WL masse  ·  Par rôle",
+            description=(
+                "Sélectionne d'abord le **type de WL** à attribuer,\n"
+                "puis le **rôle** dont tous les membres la recevront."
+            ),
+            color=C["sys"],
+            timestamp=datetime.utcnow(),
+        )
+        footer(e, i.user)
+        await i.response.send_message(embed=e, view=WLMasseView(self.guild), ephemeral=True)
+
     @discord.ui.button(label="⚠️ Violations PV", style=discord.ButtonStyle.grey, row=2)
     async def btn_violations(self, i: discord.Interaction, b):
         if not pv_violations:
@@ -1042,8 +1184,7 @@ class WLPanelMainView(discord.ui.View):
         e = self._cat_embed(f"⚠️  Violations PV  (reset effectué)", C["warn"], lines)
         await i.response.send_message(embed=e, ephemeral=True)
 
-    # ── Ligne 2 : wakeups actifs ─────────────────────────────────
-    @discord.ui.button(label="😈 Stop wakeups", style=discord.ButtonStyle.red, row=2)
+    @discord.ui.button(label="😈 Stop wakeups", style=discord.ButtonStyle.red, row=3)
     async def btn_wakeup(self, i: discord.Interaction, b):
         if not wakeup_active:
             return await i.response.send_message(embed=embed_warn("Aucun wakeup actif."), ephemeral=True)
@@ -1054,7 +1195,6 @@ class WLPanelMainView(discord.ui.View):
         footer(e, i.user)
         await i.response.send_message(embed=e, ephemeral=True)
 
-    # ── Ligne 3 : rafraîchir ─────────────────────────────────────
     @discord.ui.button(label="🔄 Rafraîchir", style=discord.ButtonStyle.grey, row=3)
     async def btn_refresh(self, i: discord.Interaction, b):
         await i.response.edit_message(embed=_wlpanel_embed(self.guild), view=self)
@@ -1943,7 +2083,7 @@ async def tipeu_slash(i, membre: discord.Member):
         await i.response.send_message(embed=embed_err("Impossible de changer son pseudo."), ephemeral=True)
 
 # ══════════════════════════════════════════════════════════════════════
-#  LIBERTÉ  (accessibles à tous)
+#  LIBERTÉ
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="ui")
 async def ui_cmd(ctx, member: discord.Member = None):
@@ -2090,7 +2230,7 @@ async def help_cmd(ctx):
             name="⭐  Sys+  [ & ]",
             value=(
                 "`&wl`  `&wlpanel`  `&restartpanel`  `&maintenance`\n"
-                "`&clear`  `&derank`  `&lock`  `&renew`  `&dmall`\n"
+                "`&clear`  `&derank`  `&lock`  `&renew`\n"
                 "`/addrole`  `/removerole`\n"
                 "*· toutes les commandes `=` et `/`*"
             ),
@@ -2126,7 +2266,7 @@ async def help_cmd(ctx):
     await ctx.reply(embed=e)
 
 # ══════════════════════════════════════════════════════════════════════
-#  &lock  (performances : gather pour toutes les permissions)
+#  &lock
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="lock")
 @check_sys_plus()
@@ -2136,7 +2276,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
     civil    = ctx.guild.get_role(CIVIL_ROLE_ID)
 
     if channel.id in locked_channels:
-        # ── Déverrouillage en parallèle ──
         saved = locked_channels.pop(channel.id)
         tasks = []
         for target, ow in saved.items():
@@ -2155,15 +2294,12 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         ))
         return
 
-    # ── Verrouillage ──
     saved_overwrites = {}
     blocked_roles    = {everyone}
     if civil:
         blocked_roles.add(civil)
 
-    # Sauvegarder les cibles existantes (hors @everyone, civil, bots)
     perm_tasks   = []
-    perm_targets = []
     for target in list(channel.overwrites.keys()):
         if target in blocked_roles:
             continue
@@ -2186,7 +2322,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         new_ow.use_application_commands = False
         perm_tasks.append(channel.set_permissions(target, overwrite=new_ow))
 
-    # Sauvegarder @everyone et civil
     for role in [everyone, civil]:
         if role is None:
             continue
@@ -2195,7 +2330,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
 
     locked_channels[channel.id] = saved_overwrites
 
-    # Verrou sur @everyone et civil
     lock_ow = discord.PermissionOverwrite(
         send_messages=False,
         send_messages_in_threads=False,
@@ -2208,7 +2342,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         if role:
             perm_tasks.append(channel.set_permissions(role, overwrite=lock_ow))
 
-    # Autoriser Sys+ et WL Sys
     allowed_uids = set(SYS_PLUS_IDS)
     for uid, wls in whitelisted.items():
         if "sys" in wls:
@@ -2226,7 +2359,6 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         if m:
             perm_tasks.append(channel.set_permissions(m, overwrite=unlock_ow))
 
-    # Tout en parallèle
     await asyncio.gather(*perm_tasks, return_exceptions=True)
 
     e = discord.Embed(
@@ -2284,120 +2416,6 @@ async def renew_cmd(ctx, channel: discord.TextChannel = None):
     asyncio.create_task(send_log(
         ctx.guild, ctx.author, "renew", "Salon renouvelé",
         [("⌨️ Commande", "`&renew`"), ("📌 Salon", f"`#{name}`"), ("📂 Catégorie", f"`{category.name if category else 'Aucune'}`")],
-    ))
-
-# ══════════════════════════════════════════════════════════════════════
-#  &dmall
-# ══════════════════════════════════════════════════════════════════════
-@bot.command(name="dmall")
-@check_sys_plus()
-async def dmall_cmd(ctx, *, message: str = None):
-    if not message:
-        return await ctx.reply(embed=embed_err(
-            "Usage : `&dmall message [ID_rôle]`\n"
-            "> `{user}` dans le message  ·  remplacé par le ping du destinataire\n"
-            "> Ajoute un **ID de rôle** à la fin pour cibler uniquement ses membres"
-        ))
-
-    role_filter: discord.Role | None = None
-    words = message.split()
-    if words and words[-1].isdigit() and len(words[-1]) >= 17:
-        role_filter = ctx.guild.get_role(int(words[-1]))
-        if role_filter:
-            message = " ".join(words[:-1]).strip()
-
-    members = (
-        [m for m in role_filter.members if not m.bot]
-        if role_filter
-        else [m for m in ctx.guild.members if not m.bot]
-    )
-    scope_txt = f"les membres avec le rôle {role_filter.mention}" if role_filter else "tous les membres"
-
-    if not members:
-        return await ctx.reply(embed=embed_warn("Aucun membre trouvé."))
-
-    preview = message.replace("{user}", members[0].mention if members else "@quelqu'un")
-
-    confirm_e = discord.Embed(
-        title="📨  Confirmer l'envoi",
-        description=(
-            f"Tu vas envoyer un DM à **{len(members)}** membres ({scope_txt}).\n\n"
-            f"**Message :**\n> {message[:300]}\n\n"
-            f"**Aperçu :**\n> {preview[:300]}"
-        ),
-        color=C["warn"], timestamp=datetime.utcnow(),
-    )
-    if role_filter:
-        confirm_e.add_field(name="🎭 Rôle ciblé", value=role_filter.mention)
-    footer(confirm_e, ctx.author)
-
-    class ConfirmView(discord.ui.View):
-        def __init__(self):
-            super().__init__(timeout=30)
-            self.confirmed = False
-
-        @discord.ui.button(label="✅ Confirmer", style=discord.ButtonStyle.green)
-        async def confirm(self, interaction, button):
-            if interaction.user.id != ctx.author.id:
-                return await interaction.response.send_message(embed=embed_err("Ce n'est pas ton panel."), ephemeral=True)
-            self.confirmed = True
-            for item in self.children:
-                item.disabled = True
-            await interaction.response.edit_message(view=self)
-            self.stop()
-
-        @discord.ui.button(label="❌ Annuler", style=discord.ButtonStyle.red)
-        async def cancel(self, interaction, button):
-            if interaction.user.id != ctx.author.id:
-                return await interaction.response.send_message(embed=embed_err("Ce n'est pas ton panel."), ephemeral=True)
-            for item in self.children:
-                item.disabled = True
-            await interaction.response.edit_message(view=self)
-            self.stop()
-
-    view = ConfirmView()
-    confirm_msg = await ctx.reply(embed=confirm_e, view=view)
-    await view.wait()
-
-    if not view.confirmed:
-        return await confirm_msg.edit(embed=embed_warn("Envoi annulé."), view=None)
-
-    progress_e = discord.Embed(
-        title="📨  Envoi en cours...",
-        description=f"Envoi à **{len(members)}** membres...",
-        color=C["info"], timestamp=datetime.utcnow(),
-    )
-    footer(progress_e, ctx.author)
-    progress_msg = await ctx.send(embed=progress_e)
-
-    ok_count   = 0
-    fail_count = 0
-    for m in members:
-        try:
-            await m.send(message.replace("{user}", m.mention))
-            ok_count += 1
-        except (discord.Forbidden, discord.HTTPException):
-            fail_count += 1
-        await asyncio.sleep(0.7)
-
-    result_e = discord.Embed(title="📨  DM Global terminé", color=C["ok"], timestamp=datetime.utcnow())
-    result_e.add_field(name="✅ Envoyés",  value=f"`{ok_count}`",  inline=True)
-    result_e.add_field(name="❌ Échoués", value=f"`{fail_count}`", inline=True)
-    if role_filter:
-        result_e.add_field(name="🎭 Rôle", value=role_filter.mention, inline=True)
-    result_e.add_field(name="📝 Message", value=f"```{message[:200]}```", inline=False)
-    footer(result_e, ctx.author)
-    await progress_msg.edit(embed=result_e)
-
-    asyncio.create_task(send_log(
-        ctx.guild, ctx.author, "dmall", "DM Global envoyé",
-        [
-            ("⌨️ Commande", "`&dmall`"),
-            ("🎯 Scope",    role_filter.mention if role_filter else "*Tout le serveur*"),
-            ("✅ Envoyés",  f"`{ok_count}`"),
-            ("❌ Échoués",  f"`{fail_count}`"),
-            ("📝 Message",  f"```{message[:200]}```", False),
-        ],
     ))
 
 # ══════════════════════════════════════════════════════════════════════
