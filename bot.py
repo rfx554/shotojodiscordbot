@@ -2596,13 +2596,12 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         ))
         return
 
-    saved_overwrites = {}
-    for role in [everyone, civil]:
-        if role is None:
-            continue
-        ow = channel.overwrites_for(role)
-        saved_overwrites[role] = ow if not ow.is_empty() else None
+    if not civil:
+        return await ctx.reply(embed=embed_err("Rôle civil introuvable."))
 
+    saved_overwrites = {}
+    ow = channel.overwrites_for(civil)
+    saved_overwrites[civil] = ow if not ow.is_empty() else None
     locked_channels[channel.id] = saved_overwrites
 
     lock_ow = discord.PermissionOverwrite(
@@ -2622,10 +2621,7 @@ async def lock_cmd(ctx, channel: discord.TextChannel = None):
         use_application_commands=True,
     )
 
-    tasks = []
-    for role in [everyone, civil]:
-        if role:
-            tasks.append(channel.set_permissions(role, overwrite=lock_ow))
+    tasks = [channel.set_permissions(civil, overwrite=lock_ow)]
 
     allowed_uids = set(SYS_PLUS_IDS)
     for uid, wls in whitelisted.items():
