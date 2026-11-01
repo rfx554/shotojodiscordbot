@@ -24,6 +24,7 @@ ROLES_FILE     = "saved_roles.json"
 PROTECT_FILE   = "protected_users.json"
 LOG_CHANNEL_ID = 1558616294788698293
 CIVIL_ROLE_ID  = 1564722577060929546
+OG_ROLE_ID     = 1558499311237468280   # ← rôle OG → WL server automatique
 
 # ── Palette DA ────────────────────────────────────────────────────────
 C = {
@@ -178,6 +179,7 @@ LOG_META = {
     "mv":          ("↗️",  C["teal"]),
     "pvsys":       ("🔒", C["navy"]),
     "wl_masse":    ("👥", C["sys"]),
+    "og_auto_wl":  ("⭐", C["gold"]),
     "default":     ("📋", C["log"]),
 }
 
@@ -247,10 +249,33 @@ WL_LABELS = {
 }
 
 # ══════════════════════════════════════════════════════════════════════
+#  OG ROLE AUTO-WL  helpers
+# ══════════════════════════════════════════════════════════════════════
+
+def _has_og_role(member: discord.Member) -> bool:
+    return any(r.id == OG_ROLE_ID for r in member.roles)
+
+def _ensure_og_wl(member: discord.Member) -> bool:
+    """Donne la WL server à un membre OG si il ne l'a pas déjà. Retourne True si ajoutée."""
+    if member.bot:
+        return False
+    lst = whitelisted.setdefault(member.id, [])
+    if "server" not in lst:
+        lst.append("server")
+        return True
+    return False
+
+def _count_og_wl(guild: discord.Guild) -> int:
+    """Nombre de membres qui ont la WL server grâce au rôle OG (approximatif : membres avec rôle OG)."""
+    role = guild.get_role(OG_ROLE_ID)
+    if not role:
+        return 0
+    return sum(1 for m in role.members if not m.bot)
+
+# ══════════════════════════════════════════════════════════════════════
 #  BOT
 # ══════════════════════════════════════════════════════════════════════
 def prefixes_for(user_id: int) -> list:
-    # Sys+ : "&" et "="   |   tous les autres : "=" uniquement
     return ["&", "="] if is_sys_plus(user_id) else ["="]
 
 async def get_prefix(bot, message):
@@ -274,7 +299,6 @@ MSG_OWNER = (
     "La prochaine c TO 24h, tu feras un ticket pour te faire unto. 🎟️"
 )
 MSG_SYS = "🚫⚡  N'essaye plus jamais de toucher un **Sys+** ! 😤"
-
 MSG_PROTECT = "🛡️  {user} est un **utilisateur protégé par un Fondateur**.\nTu ne peux pas le toucher."
 
 async def protection_check(ctx, target: discord.Member) -> bool:
@@ -365,7 +389,6 @@ async def before_any_command(ctx):
 #  EVENTS
 # ══════════════════════════════════════════════════════════════════════
 
-# Commandes dont le 1er argument est un membre (cible auto en réponse à un message)
 REPLY_CMDS = {"wl", "derank", "rerank", "laisse", "acces", "join", "menotte", "follow", "mp", "mv"}
 _ID_RE = re.compile(r"^(<@!?\d+>|\d{15,21})$")
 
@@ -374,7 +397,6 @@ async def on_message(message: discord.Message):
     if message.author.bot or message.guild is None:
         return
 
-    # Sys+ qui répond à un message avec une commande -> on injecte l'auteur du message ciblé
     if message.reference and is_sys_plus(message.author.id):
         content = message.content
         prefix = next((p for p in prefixes_for(message.author.id) if content.startswith(p)), None)
@@ -383,7 +405,7 @@ async def on_message(message: discord.Message):
             if parts and parts[0].lower() in REPLY_CMDS:
                 args  = parts[1] if len(parts) > 1 else ""
                 first = args.split(None, 1)[0] if args else ""
-                if not _ID_RE.match(first):          # pas déjà un membre précisé
+                if not _ID_RE.match(first):
                     ref = message.reference.resolved
                     if not isinstance(ref, discord.Message):
                         try:
@@ -404,6 +426,52 @@ async def on_ready():
         status=discord.Status.online,
         activity=discord.Activity(type=discord.ActivityType.watching, name="Shotojo 🌸  #🇯🇵"),
     )
+    # ── Sync OG WL au démarrage ───────────────────────────────────────
+    added_total = 0
+    for guild in bot.guilds:
+        og_role = guild.get_role(OG_ROLE_ID)
+        if not og_role:
+            continue
+        for member in og_role.members:
+            if _ensure_og_wl(member):
+                added_total += 1
+    if added_total:
+        save_wl()
+        print(f"[OG-WL] {added_total} membres OG ont reçu la WL server au démarrage.")
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    # ── Rôle OG ajouté → WL server automatique ───────────────────────
+    before_roles = {r.id for r in before.roles}
+    after_roles  = {r.id for r in after.roles}
+
+    if OG_ROLE_ID in after_roles and OG_ROLE_ID not in before_roles:
+        # Le rôle OG vient d'être donné
+        if _ensure_og_wl(after):
+            save_wl()
+            print(f"[OG-WL] WL server auto-donnée à {after} ({after.id})")
+
+    # ── Rôle OG retiré → on retire la WL server (si pas Sys+) ────────
+    if OG_ROLE_ID in before_roles and OG_ROLE_ID not in after_roles:
+        if not is_sys_plus(after.id):
+            lst = whitelisted.get(after.id, [])
+            if "server" in lst:
+                lst.remove("server")
+                if not lst:
+                    whitelisted.pop(after.id, None)
+                else:
+                    whitelisted[after.id] = lst
+                save_wl()
+                print(f"[OG-WL] WL server retirée à {after} ({after.id}) — rôle OG retiré.")
+
+    # ── Nick lock ─────────────────────────────────────────────────────
+    if after.id in locked_nicks and after.nick != "S":
+        try:
+            await after.edit(nick="S")
+        except Exception:
+            pass
+
 
 @bot.event
 async def on_message_delete(message):
@@ -418,13 +486,6 @@ async def on_message_delete(message):
         "deleted_at":  datetime.utcnow(),
     }
 
-@bot.event
-async def on_member_update(before, after):
-    if after.id in locked_nicks and after.nick != "S":
-        try:
-            await after.edit(nick="S")
-        except Exception:
-            pass
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -656,16 +717,25 @@ async def wl_cmd(ctx, member: discord.Member = None):
     await ctx.reply(embed=e, view=WLView(member, ctx.author))
 
 # ══════════════════════════════════════════════════════════════════════
-#  &wlpanel
+#  &wlpanel  — tableau de bord
 # ══════════════════════════════════════════════════════════════════════
 
 def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
-    total_wl = sum(len(v) for v in whitelisted.values())
+    # Comptage WL manuelles (fichier)
+    manual_server = sum(1 for v in whitelisted.values() if "server"   in v)
+    manual_vvip   = sum(1 for v in whitelisted.values() if "voicevip" in v)
+    manual_sys    = sum(1 for v in whitelisted.values() if "sys"      in v)
+    manual_priv   = sum(1 for v in whitelisted.values() if "privilege" in v)
 
-    vvip = sum(1 for v in whitelisted.values() if "voicevip" in v) + len(SYS_PLUS_IDS)
-    srv  = sum(1 for v in whitelisted.values() if "server"   in v) + len(SYS_PLUS_IDS)
-    sys_ = sum(1 for v in whitelisted.values() if "sys"      in v) + len(SYS_PLUS_IDS)
-    priv = sum(1 for v in whitelisted.values() if "privilege" in v)
+    og_count  = _count_og_wl(guild)            # membres OG non-bot
+    sys_bonus = len(SYS_PLUS_IDS)
+
+    vvip_total   = manual_vvip  + sys_bonus
+    server_total = manual_server + og_count + sys_bonus  # OG comptés ici
+    sys_total    = manual_sys   + sys_bonus
+    priv_total   = manual_priv
+
+    total_wl = sum(len(v) for v in whitelisted.values())
 
     status_line = "🔴  **MAINTENANCE**" if maintenance else "🟢  **Opérationnel**"
 
@@ -679,11 +749,11 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
     e.add_field(
         name="🏷️  Whitelists",
         value=(
-            f"🎤 VoiceVIP  ·  `{vvip}`\n"
-            f"🌐 Server    ·  `{srv}`\n"
-            f"⚡ WL Sys   ·  `{sys_}`\n"
-            f"👑 Privilege ·  `{priv}`\n"
-            f"**Total       ·  `{total_wl}`**"
+            f"🎤 VoiceVIP  ·  `{vvip_total}`\n"
+            f"🌐 Server    ·  `{server_total}`  *(dont ⭐ OG `{og_count}`)*\n"
+            f"⚡ WL Sys   ·  `{sys_total}`\n"
+            f"👑 Privilege ·  `{priv_total}`\n"
+            f"**Total WL fichier  ·  `{total_wl}`**"
         ),
         inline=True,
     )
@@ -707,7 +777,258 @@ def _wlpanel_embed(guild: discord.Guild) -> discord.Embed:
     return e
 
 
-# ── Vues par catégorie ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════
+#  REFONTE PANEL WL — système de retrait paginé avec recherche
+# ══════════════════════════════════════════════════════════════════════
+
+PAGE_SIZE = 8   # entrées par page dans le sélecteur WL
+
+def _wl_entries_all() -> list[tuple[int, str]]:
+    """Retourne [(uid, wl_key), ...] triés par uid."""
+    return sorted(
+        [(uid, wl) for uid, wls in whitelisted.items() for wl in wls],
+        key=lambda x: x[0],
+    )
+
+def _wl_entries_filtered(query: str) -> list[tuple[int, str]]:
+    """Filtre les entrées WL par nom d'utilisateur ou ID (query insensible à la casse)."""
+    q = query.lower().strip()
+    return [
+        (uid, wl) for uid, wl in _wl_entries_all()
+        if q in str(uid) or q in wl.lower()
+    ]
+
+
+class WLRemovePaginatedView(discord.ui.View):
+    """
+    Panel de retrait WL avec :
+    - recherche par ID / nom de WL
+    - pagination par pages de PAGE_SIZE
+    - sélecteur pour choisir l'entrée à retirer
+    """
+
+    def __init__(self, guild: discord.Guild, invoker: discord.Member, query: str = ""):
+        super().__init__(timeout=180)
+        self.guild   = guild
+        self.invoker = invoker
+        self.query   = query
+        self.page    = 0
+        self._rebuild()
+
+    # ── helpers ──────────────────────────────────────────────────────
+
+    def _entries(self) -> list[tuple[int, str]]:
+        if self.query:
+            return _wl_entries_filtered(self.query)
+        return _wl_entries_all()
+
+    def _max_page(self) -> int:
+        return max(0, (len(self._entries()) - 1) // PAGE_SIZE)
+
+    def _page_entries(self) -> list[tuple[int, str]]:
+        entries = self._entries()
+        start   = self.page * PAGE_SIZE
+        return entries[start:start + PAGE_SIZE]
+
+    def _rebuild(self):
+        """Reconstruit les composants selon la page courante."""
+        self.clear_items()
+        page_entries = self._page_entries()
+        entries_all  = self._entries()
+        total        = len(entries_all)
+        max_page     = self._max_page()
+
+        # ── Sélecteur d'entrée ────────────────────────────────────────
+        if page_entries:
+            options = []
+            for uid, wl in page_entries:
+                m    = self.guild.get_member(uid)
+                icon = WL_LABELS.get(wl, ("•", wl, 0))[0]
+                name = m.display_name if m else f"ID {uid}"
+                options.append(discord.SelectOption(
+                    label=f"{icon} {wl}  ·  {name}"[:100],
+                    value=f"{uid}|{wl}",
+                    description=f"ID : {uid}"[:100],
+                    emoji=None,
+                ))
+            sel = discord.ui.Select(
+                placeholder=f"Choisir une WL à retirer  (p.{self.page+1}/{max_page+1})",
+                options=options,
+                custom_id="wl_remove_select",
+            )
+            sel.callback = self._on_select
+            self.add_item(sel)
+
+        # ── Navigation ───────────────────────────────────────────────
+        prev_btn = discord.ui.Button(
+            label="◀", style=discord.ButtonStyle.grey,
+            disabled=(self.page == 0), row=1,
+        )
+        prev_btn.callback = self._prev
+        self.add_item(prev_btn)
+
+        count_btn = discord.ui.Button(
+            label=f"{self.page+1} / {max_page+1}  ({total} entrées)",
+            style=discord.ButtonStyle.grey, disabled=True, row=1,
+        )
+        self.add_item(count_btn)
+
+        next_btn = discord.ui.Button(
+            label="▶", style=discord.ButtonStyle.grey,
+            disabled=(self.page >= max_page), row=1,
+        )
+        next_btn.callback = self._next
+        self.add_item(next_btn)
+
+        # ── Recherche ────────────────────────────────────────────────
+        search_btn = discord.ui.Button(
+            label=f"🔍 Recherche{' : ' + self.query if self.query else ''}",
+            style=discord.ButtonStyle.blurple if self.query else discord.ButtonStyle.grey,
+            row=2,
+        )
+        search_btn.callback = self._open_search
+        self.add_item(search_btn)
+
+        if self.query:
+            clear_btn = discord.ui.Button(label="✖ Effacer filtre", style=discord.ButtonStyle.red, row=2)
+            clear_btn.callback = self._clear_search
+            self.add_item(clear_btn)
+
+        close_btn = discord.ui.Button(label="✕ Fermer", style=discord.ButtonStyle.danger, row=3)
+        close_btn.callback = self._close
+        self.add_item(close_btn)
+
+    def _build_embed(self) -> discord.Embed:
+        entries = self._entries()
+        total   = len(entries)
+        if total == 0:
+            desc = "*Aucune WL trouvée.*" if self.query else "*Aucune WL enregistrée.*"
+        else:
+            lines = []
+            for uid, wl in self._page_entries():
+                m    = self.guild.get_member(uid)
+                icon = WL_LABELS.get(wl, ("•", wl, 0))[0]
+                name = m.mention if m else f"`{uid}`"
+                lines.append(f"{icon} `{wl}`  ·  {name}")
+            desc = "\n".join(lines)
+            if self.query:
+                desc = f"🔍 Filtre : `{self.query}`\n\n" + desc
+
+        e = discord.Embed(
+            title=f"👥  Gestion WL  ·  {total} entrée(s)",
+            description=desc,
+            color=C["sys"],
+            timestamp=datetime.utcnow(),
+        )
+        footer(e, self.invoker)
+        return e
+
+    # ── callbacks ────────────────────────────────────────────────────
+
+    async def interaction_check(self, i: discord.Interaction) -> bool:
+        if i.user.id != self.invoker.id:
+            await i.response.send_message(embed=embed_err("Ce panel ne t'appartient pas."), ephemeral=True)
+            return False
+        if not is_sys_plus(i.user.id):
+            await i.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
+            return False
+        return True
+
+    async def _on_select(self, i: discord.Interaction):
+        value    = i.data["values"][0]
+        uid_str, wl = value.split("|", 1)
+        uid = int(uid_str)
+        m = self.guild.get_member(uid)
+
+        if uid in whitelisted and wl in whitelisted[uid]:
+            whitelisted[uid].remove(wl)
+            if not whitelisted[uid]:
+                del whitelisted[uid]
+            save_wl()
+
+        icon, label_name, color = WL_LABELS.get(wl, ("•", wl, C["error"]))
+        name_display = m.display_name if m else f"ID {uid}"
+
+        # On remet page à 0 si elle dépasse
+        if self.page > self._max_page():
+            self.page = max(0, self._max_page())
+
+        self._rebuild()
+        confirm = discord.Embed(
+            title=f"{icon}  WL retirée",
+            description=f"**{label_name}** retirée à **{name_display}**.",
+            color=C["error"], timestamp=datetime.utcnow(),
+        )
+        footer(confirm, i.user)
+        await i.response.edit_message(embed=self._build_embed(), view=self)
+        await i.followup.send(embed=confirm, ephemeral=True)
+
+        asyncio.create_task(send_log(
+            self.guild, i.user, "wl", f"WL retirée  {label_name}",
+            [("⌨️ Commande", "`&wlpanel`"), ("🏷️ WL", f"`{wl}`  {icon}"), ("📋 Label", label_name)],
+            target=m,
+        ))
+        if m:
+            try:
+                dm = discord.Embed(
+                    title="🚫  Whitelist retirée",
+                    description=f"Ta **{label_name}** t'a été retirée sur **{self.guild.name}**.",
+                    color=C["error"], timestamp=datetime.utcnow(),
+                )
+                footer(dm)
+                await m.send(embed=dm)
+            except Exception:
+                pass
+
+    async def _prev(self, i: discord.Interaction):
+        self.page = max(0, self.page - 1)
+        self._rebuild()
+        await i.response.edit_message(embed=self._build_embed(), view=self)
+
+    async def _next(self, i: discord.Interaction):
+        self.page = min(self._max_page(), self.page + 1)
+        self._rebuild()
+        await i.response.edit_message(embed=self._build_embed(), view=self)
+
+    async def _open_search(self, i: discord.Interaction):
+        await i.response.send_modal(_WLSearchModal(self))
+
+    async def _clear_search(self, i: discord.Interaction):
+        self.query = ""
+        self.page  = 0
+        self._rebuild()
+        await i.response.edit_message(embed=self._build_embed(), view=self)
+
+    async def _close(self, i: discord.Interaction):
+        await i.response.defer()
+        await i.delete_original_response()
+        self.stop()
+
+
+class _WLSearchModal(discord.ui.Modal, title="Rechercher une WL"):
+    query = discord.ui.TextInput(
+        label="ID du membre ou nom de WL",
+        placeholder="ex: 123456789 ou server ou voicevip",
+        max_length=50, required=True,
+    )
+
+    def __init__(self, parent: WLRemovePaginatedView):
+        super().__init__()
+        self._parent = parent
+
+    async def on_submit(self, i: discord.Interaction):
+        self._parent.query = self.query.value.strip()
+        self._parent.page  = 0
+        self._parent._rebuild()
+        await i.response.edit_message(
+            embed=self._parent._build_embed(),
+            view=self._parent,
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Vues secondaires (PV, Laisse, Dog, Follow, Menotte, Tipeu)
+# ══════════════════════════════════════════════════════════════════════
 
 class PVListView(discord.ui.View):
     def __init__(self, guild: discord.Guild, entries: list):
@@ -874,51 +1195,6 @@ def _make_menotte_btn(label, oid, owner, target, view):
     return btn
 
 
-class WLRemoveView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, entries: list):
-        super().__init__(timeout=120)
-        self.guild = guild
-        for uid, wl in entries:
-            m = guild.get_member(uid)
-            icon = WL_LABELS.get(wl, ("•", wl, 0))[0]
-            label = f"❌  {m.display_name if m else uid}  ·  {icon} {wl}"[:80]
-            btn = _make_wl_remove_btn(label, uid, wl, m, self)
-            self.add_item(btn)
-
-def _make_wl_remove_btn(label, uid, wl, member, view):
-    btn = discord.ui.Button(label=label, style=discord.ButtonStyle.red)
-    async def callback(interaction: discord.Interaction):
-        if not is_sys_plus(interaction.user.id):
-            return await interaction.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
-        if uid in whitelisted and wl in whitelisted[uid]:
-            whitelisted[uid].remove(wl)
-            if not whitelisted[uid]:
-                del whitelisted[uid]
-            save_wl()
-        icon, label_name, color = WL_LABELS.get(wl, ("•", wl, C["error"]))
-        e = embed_ok(f"La **{label_name}** a été retirée à **{member.display_name if member else uid}**.")
-        footer(e, interaction.user)
-        await interaction.response.edit_message(embed=e, view=None)
-        asyncio.create_task(send_log(
-            view.guild, interaction.user, "wl", f"WL retirée  {label_name}",
-            [("⌨️ Commande", "`&wlpanel`"), ("🏷️ WL", f"`{wl}`  {icon}"), ("📋 Label", label_name)],
-            target=member,
-        ))
-        if member:
-            try:
-                dm = discord.Embed(
-                    title="🚫  Whitelist retirée",
-                    description=f"Ta **{label_name}** t'a été retirée sur **{view.guild.name}**.",
-                    color=C["error"], timestamp=datetime.utcnow(),
-                )
-                footer(dm)
-                await member.send(embed=dm)
-            except Exception:
-                pass
-    btn.callback = callback
-    return btn
-
-
 class TipeuListView(discord.ui.View):
     def __init__(self, guild: discord.Guild, entries: list):
         super().__init__(timeout=120)
@@ -957,7 +1233,6 @@ def _make_tipeu_btn(label, uid, member, view):
 # ══════════════════════════════════════════════════════════════════════
 
 def _find_role(guild: discord.Guild, text: str):
-    """Retrouve un rôle depuis un ID, une mention ou un nom (exact, puis partiel)."""
     text = text.strip()
     if not text:
         return None
@@ -977,7 +1252,6 @@ def _find_role(guild: discord.Guild, text: str):
 
 
 class WLMasseTypeSelect(discord.ui.Select):
-    """Étape 1 : choisir la WL, puis le bot demande le rôle dans le salon."""
     def __init__(self, guild: discord.Guild):
         self.guild = guild
         options = [
@@ -1105,7 +1379,6 @@ class WLMasseTypeSelect(discord.ui.Select):
 
 
 class WLMasseView(discord.ui.View):
-    """Vue d'entrée pour la WL en masse."""
     def __init__(self, guild: discord.Guild):
         super().__init__(timeout=120)
         self.add_item(WLMasseTypeSelect(guild))
@@ -1240,25 +1513,14 @@ class WLPanelMainView(discord.ui.View):
             view=view, ephemeral=True,
         )
 
-    @discord.ui.button(label="👥 Whitelists", style=discord.ButtonStyle.green, row=2)
+    @discord.ui.button(label="👥 Gérer les WL", style=discord.ButtonStyle.green, row=2)
     async def btn_wl(self, i: discord.Interaction, b):
-        entries = [(uid, wl) for uid, wls in whitelisted.items() for wl in wls]
-        if not entries:
-            return await i.response.send_message(embed=embed_warn("Aucune WL active."), ephemeral=True)
-        lines = []
-        for uid, wl in entries:
-            m = self.guild.get_member(uid)
-            icon = WL_LABELS.get(wl, ("•", wl, 0))[0]
-            lines.append(f"{icon}  {m.mention if m else uid}  ·  `{wl}`")
-        view = WLRemoveView(self.guild, entries[:5])
-        await i.response.send_message(
-            embed=self._cat_embed(f"👥  Whitelists  ({len(entries)})", C["sys"], lines),
-            view=view, ephemeral=True,
-        )
+        """Nouveau panel paginé avec recherche."""
+        view = WLRemovePaginatedView(self.guild, i.user)
+        await i.response.send_message(embed=view._build_embed(), view=view, ephemeral=True)
 
     @discord.ui.button(label="🎭 WL par rôle", style=discord.ButtonStyle.green, row=2)
     async def btn_wl_masse(self, i: discord.Interaction, b):
-        """Attribuer une WL à tous les membres d'un rôle."""
         e = discord.Embed(
             title="🎭  WL masse  ·  Par rôle",
             description=(
@@ -1359,7 +1621,6 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
         return await ctx.reply(embed=embed_warn(f"{member.mention} n'a aucun rôle à retirer."))
     roles_txt = "  ".join(r.mention for r in roles)
 
-    # Sauvegarde pour &rerank (cumulée si plusieurs derank d'affilée)
     prev = saved_roles.get(member.id, [])
     saved_roles[member.id] = list(dict.fromkeys(prev + [r.id for r in roles]))
     save_saved_roles()
@@ -1410,9 +1671,9 @@ async def rerank_cmd(ctx, member: discord.Member = None):
     to_add, skipped = [], []
     for rid in ids:
         r = ctx.guild.get_role(rid)
-        if r is None or r in member.roles:      # rôle supprimé ou déjà possédé
+        if r is None or r in member.roles:
             continue
-        if r.managed or r >= me_top:            # je ne peux pas le donner
+        if r.managed or r >= me_top:
             skipped.append(r)
             continue
         to_add.append(r)
@@ -1423,7 +1684,6 @@ async def rerank_cmd(ctx, member: discord.Member = None):
         except discord.Forbidden:
             return await ctx.reply(embed=embed_err("Impossible de redonner ces rôles (permissions)."))
 
-    # On garde uniquement ceux qu'on n'a pas pu redonner
     if skipped:
         saved_roles[member.id] = [r.id for r in skipped]
     else:
@@ -1577,7 +1837,6 @@ async def rollbackrole_slash(i: discord.Interaction, role: discord.Role, minutes
     await i.response.defer(thinking=True, ephemeral=True)
     since = discord.utils.utcnow() - timedelta(minutes=minutes)
 
-    # Membres à qui LE BOT a ajouté ce rôle via /addrole tous
     ids = set()
     try:
         async for en in i.guild.audit_logs(
