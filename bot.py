@@ -21,6 +21,7 @@ SYS_PLUS_IDS = {
 
 WL_FILE        = "whitelisted.json"
 ROLES_FILE     = "saved_roles.json"
+PROTECT_FILE   = "protected_users.json"
 LOG_CHANNEL_ID = 1558616294788698293
 CIVIL_ROLE_ID  = 1564722577060929546
 
@@ -132,6 +133,22 @@ def save_saved_roles() -> None:
         json.dump({str(k): v for k, v in saved_roles.items()}, f)
 
 # ══════════════════════════════════════════════════════════════════════
+#  UTILISATEURS PROTÉGÉS  I/O   { membre_protégé : sys+ qui l'a protégé }
+# ══════════════════════════════════════════════════════════════════════
+def load_protected() -> dict:
+    if os.path.exists(PROTECT_FILE):
+        try:
+            with open(PROTECT_FILE) as f:
+                return {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            pass
+    return {}
+
+def save_protected() -> None:
+    with open(PROTECT_FILE, "w") as f:
+        json.dump({str(k): v for k, v in protected_users.items()}, f)
+
+# ══════════════════════════════════════════════════════════════════════
 #  SYSTÈME DE LOGS
 # ══════════════════════════════════════════════════════════════════════
 LOG_META = {
@@ -149,6 +166,7 @@ LOG_META = {
     "wl":          ("👥", C["sys"]),
     "derank":      ("🔨", C["orange"]),
     "rerank":      ("🔄", C["ok"]),
+    "protect":     ("🛡️", C["teal"]),
     "clear":       ("🗑️",  C["error"]),
     "lock":        ("🔐", C["maint"]),
     "renew":       ("🔄", C["maint"]),
@@ -204,6 +222,7 @@ async def send_log(
 # ══════════════════════════════════════════════════════════════════════
 whitelisted:     dict  = load_wl()
 saved_roles:     dict  = load_saved_roles()
+protected_users: dict  = load_protected()
 private_vocs:    dict  = {}
 pv_access:       dict  = {}
 pv_violations:   dict  = {}
@@ -256,6 +275,8 @@ MSG_OWNER = (
 )
 MSG_SYS = "🚫⚡  N'essaye plus jamais de toucher un **Sys+** ! 😤"
 
+MSG_PROTECT = "🛡️  {user} est un **utilisateur protégé par un Fondateur**.\nTu ne peux pas le toucher."
+
 async def protection_check(ctx, target: discord.Member) -> bool:
     if target.id == OWNER_ID and not is_owner(ctx.author.id):
         await ctx.reply(embed=embed_err(MSG_OWNER))
@@ -263,14 +284,27 @@ async def protection_check(ctx, target: discord.Member) -> bool:
     if is_sys_plus(target.id) and not is_sys_plus(ctx.author.id):
         await ctx.reply(embed=embed_err(MSG_SYS))
         return False
+    if target.id in protected_users and not is_sys_plus(ctx.author.id):
+        await ctx.reply(embed=embed_err(MSG_PROTECT.format(user=target.mention)))
+        return False
     return True
+
+async def _deny_i(i: discord.Interaction, text: str) -> None:
+    e = embed_err(text)
+    if not i.response.is_done():
+        await i.response.send_message(embed=e)
+    else:
+        await i.channel.send(embed=e)
 
 async def protection_check_i(i: discord.Interaction, target: discord.Member) -> bool:
     if target.id == OWNER_ID and not is_owner(i.user.id):
-        await i.channel.send(embed=embed_err(f"{i.user.mention}  {MSG_OWNER}"))
+        await _deny_i(i, f"{i.user.mention}  {MSG_OWNER}")
         return False
     if is_sys_plus(target.id) and not is_sys_plus(i.user.id):
-        await i.channel.send(embed=embed_err(f"{i.user.mention}  {MSG_SYS}"))
+        await _deny_i(i, f"{i.user.mention}  {MSG_SYS}")
+        return False
+    if target.id in protected_users and not is_sys_plus(i.user.id):
+        await _deny_i(i, MSG_PROTECT.format(user=target.mention))
         return False
     return True
 
@@ -1589,6 +1623,45 @@ async def rollbackrole_slash(i: discord.Interaction, role: discord.Role, minutes
     ))
 
 
+@tree.command(name="protect-user", description="Protéger un membre (ou retirer sa protection) (Sys+)")
+@app_commands.describe(membre="Le membre à protéger  ·  refais la commande pour retirer la protection")
+async def protect_user_slash(i: discord.Interaction, membre: discord.Member):
+    if not is_sys_plus(i.user.id):
+        return await i.response.send_message(embed=embed_err("Réservé aux **Sys+**."), ephemeral=True)
+    if membre.bot:
+        return await i.response.send_message(embed=embed_err("Impossible de protéger un bot."), ephemeral=True)
+    if is_sys_plus(membre.id):
+        return await i.response.send_message(
+            embed=embed_warn(f"{membre.mention} est un **Sys+**, il est déjà intouchable."), ephemeral=True)
+
+    if membre.id in protected_users:
+        protected_users.pop(membre.id, None)
+        save_protected()
+        e = embed_warn(f"La protection de {membre.mention} a été **retirée**.", title="Protection retirée")
+        footer(e, i.user)
+        await i.response.send_message(embed=e)
+        asyncio.create_task(send_log(
+            i.guild, i.user, "protect", "Protection retirée",
+            [("⌨️ Commande", "`/protect-user`")], target=membre,
+        ))
+        return
+
+    protected_users[membre.id] = i.user.id
+    save_protected()
+    e = discord.Embed(
+        title="🛡️  Utilisateur protégé",
+        description=f"{membre.mention} est maintenant **protégé par un Fondateur**.\nPersonne (hors Sys+) ne peut le cibler.",
+        color=C["teal"], timestamp=datetime.utcnow(),
+    )
+    e.set_thumbnail(url=membre.display_avatar.url)
+    footer(e, i.user)
+    await i.response.send_message(embed=e)
+    asyncio.create_task(send_log(
+        i.guild, i.user, "protect", "Utilisateur protégé",
+        [("⌨️ Commande", "`/protect-user`")], target=membre,
+    ))
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  COMMANDES VOICEVIP  (=)
 # ══════════════════════════════════════════════════════════════════════
@@ -2136,6 +2209,8 @@ async def wakeup_slash(i, membre: discord.Member):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
         return
+    if not await protection_check_i(i, membre):
+        return
     await i.response.send_modal(WakeupModal(membre, i.user))
 
 # ══════════════════════════════════════════════════════════════════════
@@ -2219,6 +2294,8 @@ async def snap_slash(i: discord.Interaction, membre: discord.Member, message: st
     if maintenance and not is_sys_plus(i.user.id):
         return await i.response.send_message(embed=embed_warn("Maintenance."), ephemeral=True)
     if not has_server(i.user.id):
+        return
+    if not await protection_check_i(i, membre):
         return
     e = discord.Embed(title="📸  Quelqu'un veut ton Snap !", color=C["gold"], timestamp=datetime.utcnow())
     e.set_author(name=i.user.display_name, icon_url=i.user.display_avatar.url)
@@ -2433,7 +2510,7 @@ async def help_cmd(ctx):
             value=(
                 "`&wl`  `&wlpanel`  `&restartpanel`  `&maintenance`\n"
                 "`&clear`  `&derank`  `&rerank`  `&lock`  `&renew`\n"
-                "`/addrole`  `/removerole`  `/rollbackrole`\n"
+                "`/addrole`  `/removerole`  `/rollbackrole`  `/protect-user`\n"
                 "*· en répondant à un message, la commande cible son auteur*\n"
                 "*· toutes les commandes `=` et `/`*"
             ),
