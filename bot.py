@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import discord
 from discord.ext import commands
@@ -19,6 +20,7 @@ SYS_PLUS_IDS = {
 }
 
 WL_FILE        = "whitelisted.json"
+ROLES_FILE     = "saved_roles.json"
 LOG_CHANNEL_ID = 1558616294788698293
 CIVIL_ROLE_ID  = 1564722577060929546
 
@@ -114,6 +116,22 @@ def save_wl() -> None:
         json.dump({str(k): v for k, v in whitelisted.items()}, f)
 
 # ══════════════════════════════════════════════════════════════════════
+#  ANCIENS RÔLES (derank / rerank)  I/O
+# ══════════════════════════════════════════════════════════════════════
+def load_saved_roles() -> dict:
+    if os.path.exists(ROLES_FILE):
+        try:
+            with open(ROLES_FILE) as f:
+                return {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            pass
+    return {}
+
+def save_saved_roles() -> None:
+    with open(ROLES_FILE, "w") as f:
+        json.dump({str(k): v for k, v in saved_roles.items()}, f)
+
+# ══════════════════════════════════════════════════════════════════════
 #  SYSTÈME DE LOGS
 # ══════════════════════════════════════════════════════════════════════
 LOG_META = {
@@ -130,6 +148,7 @@ LOG_META = {
     "tipeu":       ("🔒", C["navy"]),
     "wl":          ("👥", C["sys"]),
     "derank":      ("🔨", C["orange"]),
+    "rerank":      ("🔄", C["ok"]),
     "clear":       ("🗑️",  C["error"]),
     "lock":        ("🔐", C["maint"]),
     "renew":       ("🔄", C["maint"]),
@@ -184,6 +203,7 @@ async def send_log(
 #  STOCKAGE EN MÉMOIRE
 # ══════════════════════════════════════════════════════════════════════
 whitelisted:     dict  = load_wl()
+saved_roles:     dict  = load_saved_roles()
 private_vocs:    dict  = {}
 pv_access:       dict  = {}
 pv_violations:   dict  = {}
@@ -210,8 +230,12 @@ WL_LABELS = {
 # ══════════════════════════════════════════════════════════════════════
 #  BOT
 # ══════════════════════════════════════════════════════════════════════
+def prefixes_for(user_id: int) -> list:
+    # Sys+ : "&" et "="   |   tous les autres : "=" uniquement
+    return ["&", "="] if is_sys_plus(user_id) else ["="]
+
 async def get_prefix(bot, message):
-    return ["&", "="]
+    return prefixes_for(message.author.id)
 
 intents = discord.Intents.all()
 bot  = commands.Bot(command_prefix=get_prefix, intents=intents, help_command=None)
@@ -306,6 +330,38 @@ async def before_any_command(ctx):
 # ══════════════════════════════════════════════════════════════════════
 #  EVENTS
 # ══════════════════════════════════════════════════════════════════════
+
+# Commandes dont le 1er argument est un membre (cible auto en réponse à un message)
+REPLY_CMDS = {"wl", "derank", "rerank", "laisse", "acces", "join", "menotte", "follow", "mp", "mv"}
+_ID_RE = re.compile(r"^(<@!?\d+>|\d{15,21})$")
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot or message.guild is None:
+        return
+
+    # Sys+ qui répond à un message avec une commande -> on injecte l'auteur du message ciblé
+    if message.reference and is_sys_plus(message.author.id):
+        content = message.content
+        prefix = next((p for p in prefixes_for(message.author.id) if content.startswith(p)), None)
+        if prefix:
+            parts = content[len(prefix):].split(None, 1)
+            if parts and parts[0].lower() in REPLY_CMDS:
+                args  = parts[1] if len(parts) > 1 else ""
+                first = args.split(None, 1)[0] if args else ""
+                if not _ID_RE.match(first):          # pas déjà un membre précisé
+                    ref = message.reference.resolved
+                    if not isinstance(ref, discord.Message):
+                        try:
+                            ref = await message.channel.fetch_message(message.reference.message_id)
+                        except Exception:
+                            ref = None
+                    if ref is not None:
+                        message.content = f"{prefix}{parts[0]} <@{ref.author.id}>" + (f" {args}" if args else "")
+
+    await bot.process_commands(message)
+
+
 @bot.event
 async def on_ready():
     await tree.sync()
@@ -319,7 +375,7 @@ async def on_ready():
 async def on_message_delete(message):
     if message.author.bot or not message.content:
         return
-    if message.content.strip().lower().startswith("=snipe"):
+    if message.content.strip().lower().startswith(("=snipe", "&snipe")):
         return
     snipe_cache[message.channel.id] = {
         "content":     message.content,
@@ -549,7 +605,7 @@ class WLView(discord.ui.View):
 @check_sys_plus()
 async def wl_cmd(ctx, member: discord.Member = None):
     if not member:
-        return await ctx.reply(embed=embed_err("Usage : `&wl @membre`"))
+        return await ctx.reply(embed=embed_err("Usage : `&wl @membre`  (ou réponds à son message avec `&wl`)"))
     wls = whitelisted.get(member.id, [])
     wl_display = "  ".join(
         f"{WL_LABELS[w][0]} `{w}`" for w in wls if w in WL_LABELS
@@ -1214,7 +1270,7 @@ async def restartpanel_cmd(ctx):
     await ctx.reply(embed=e, view=WLPanelMainView(ctx.guild))
 
 # ══════════════════════════════════════════════════════════════════════
-#  &clear / &derank
+#  &clear / &derank / &rerank
 # ══════════════════════════════════════════════════════════════════════
 @bot.command(name="clear")
 @check_sys_plus()
@@ -1252,10 +1308,19 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
         return
     if member.top_role >= ctx.guild.me.top_role:
         return await ctx.reply(embed=embed_err("Son rôle est trop haut pour moi."))
-    roles = [r for r in member.roles if r != ctx.guild.default_role and r < ctx.guild.me.top_role]
+    roles = [
+        r for r in member.roles
+        if r != ctx.guild.default_role and not r.managed and r < ctx.guild.me.top_role
+    ]
     if not roles:
         return await ctx.reply(embed=embed_warn(f"{member.mention} n'a aucun rôle à retirer."))
     roles_txt = "  ".join(r.mention for r in roles)
+
+    # Sauvegarde pour &rerank (cumulée si plusieurs derank d'affilée)
+    prev = saved_roles.get(member.id, [])
+    saved_roles[member.id] = list(dict.fromkeys(prev + [r.id for r in roles]))
+    save_saved_roles()
+
     await member.remove_roles(*roles, reason=f"Derank par {ctx.author}  {reason}")
     e = discord.Embed(
         title="🔨  Derank exécuté",
@@ -1279,6 +1344,73 @@ async def derank_cmd(ctx, member: discord.Member = None, *, reason: str = "Aucun
             title="⚠️  Tu as été derank",
             description=f"Tous tes rôles ont été retirés sur **{ctx.guild.name}**.\n\n> *{reason}*",
             color=C["orange"], timestamp=datetime.utcnow(),
+        )
+        footer(dm)
+        await member.send(embed=dm)
+    except Exception:
+        pass
+
+
+@bot.command(name="rerank")
+@check_sys_plus()
+async def rerank_cmd(ctx, member: discord.Member = None):
+    if not member:
+        return await ctx.reply(embed=embed_err("Usage : `&rerank @membre`  (ou réponds à son message avec `&rerank`)"))
+    if not await protection_check(ctx, member):
+        return
+
+    ids = saved_roles.get(member.id)
+    if not ids:
+        return await ctx.reply(embed=embed_warn(f"Aucun ancien rôle enregistré pour {member.mention}."))
+
+    me_top = ctx.guild.me.top_role
+    to_add, skipped = [], []
+    for rid in ids:
+        r = ctx.guild.get_role(rid)
+        if r is None or r in member.roles:      # rôle supprimé ou déjà possédé
+            continue
+        if r.managed or r >= me_top:            # je ne peux pas le donner
+            skipped.append(r)
+            continue
+        to_add.append(r)
+
+    if to_add:
+        try:
+            await member.add_roles(*to_add, reason=f"Rerank par {ctx.author}")
+        except discord.Forbidden:
+            return await ctx.reply(embed=embed_err("Impossible de redonner ces rôles (permissions)."))
+
+    # On garde uniquement ceux qu'on n'a pas pu redonner
+    if skipped:
+        saved_roles[member.id] = [r.id for r in skipped]
+    else:
+        saved_roles.pop(member.id, None)
+    save_saved_roles()
+
+    e = discord.Embed(title="🔄  Rerank exécuté", color=C["ok"], timestamp=datetime.utcnow())
+    e.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+    e.set_thumbnail(url=member.display_avatar.url)
+    e.add_field(name="Membre", value=member.mention,     inline=True)
+    e.add_field(name="Par",    value=ctx.author.mention, inline=True)
+    e.add_field(name="🎭 Rôles rendus",
+                value="  ".join(r.mention for r in to_add) or "*Aucun*", inline=False)
+    if skipped:
+        e.add_field(name="⚠️ Non restaurés (trop hauts / gérés)",
+                    value="  ".join(r.mention for r in skipped), inline=False)
+    footer(e, ctx.author)
+    await ctx.reply(embed=e)
+
+    asyncio.create_task(send_log(
+        ctx.guild, ctx.author, "rerank", "Rerank exécuté",
+        [("⌨️ Commande", "`&rerank`"),
+         ("🎭 Rôles", "  ".join(r.mention for r in to_add) or "*Aucun*", False)],
+        target=member,
+    ))
+    try:
+        dm = discord.Embed(
+            title="🔄  Tes rôles ont été restaurés",
+            description=f"Tes anciens rôles t'ont été rendus sur **{ctx.guild.name}**.",
+            color=C["ok"], timestamp=datetime.utcnow(),
         )
         footer(dm)
         await member.send(embed=dm)
@@ -2230,8 +2362,9 @@ async def help_cmd(ctx):
             name="⭐  Sys+  [ & ]",
             value=(
                 "`&wl`  `&wlpanel`  `&restartpanel`  `&maintenance`\n"
-                "`&clear`  `&derank`  `&lock`  `&renew`\n"
+                "`&clear`  `&derank`  `&rerank`  `&lock`  `&renew`\n"
                 "`/addrole`  `/removerole`\n"
+                "*· en répondant à un message, la commande cible son auteur*\n"
                 "*· toutes les commandes `=` et `/`*"
             ),
             inline=False,
