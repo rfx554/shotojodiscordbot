@@ -922,31 +922,38 @@ def _make_tipeu_btn(label, uid, member, view):
 #  WL MASSE PAR RÔLE  (select défilant)
 # ══════════════════════════════════════════════════════════════════════
 
-class WLMasseRoleSelect(discord.ui.Select):
-    """Étape 1 : choisir le rôle cible."""
-    def __init__(self, guild: discord.Guild, wl_type: str):
-        self.guild   = guild
-        self.wl_type = wl_type
+def _find_role(guild: discord.Guild, text: str):
+    """Retrouve un rôle depuis un ID, une mention ou un nom (exact, puis partiel)."""
+    text = text.strip()
+    if not text:
+        return None
+    m = re.search(r"\d{15,21}", text)
+    if m:
+        r = guild.get_role(int(m.group()))
+        if r:
+            return r
+    t = text.lower()
+    roles = [r for r in guild.roles if r != guild.default_role]
+    for r in roles:
+        if r.name.lower() == t:
+            return r
+    cands = [r for r in roles if t in r.name.lower()]
+    cands.sort(key=lambda r: r.position, reverse=True)
+    return cands[0] if cands else None
 
-        # On prend les 25 premiers rôles non-managed, non-@everyone, triés par position décroissante
-        roles = [
-            r for r in guild.roles
-            if r != guild.default_role and not r.managed
-        ]
-        roles.sort(key=lambda r: r.position, reverse=True)
-        roles = roles[:25]
 
+class WLMasseTypeSelect(discord.ui.Select):
+    """Étape 1 : choisir la WL, puis le bot demande le rôle dans le salon."""
+    def __init__(self, guild: discord.Guild):
+        self.guild = guild
         options = [
-            discord.SelectOption(
-                label=r.name[:100],
-                value=str(r.id),
-                description=f"{len(r.members)} membre(s)",
-                emoji="🎭",
-            )
-            for r in roles
+            discord.SelectOption(label="🎤 VoiceVIP",  value="voicevip",  description="Accès aux vocaux privés"),
+            discord.SelectOption(label="🌐 Server",    value="server",    description="Commandes server (dog, snap, wakeup...)"),
+            discord.SelectOption(label="⚡ WL Sys",    value="sys",       description="Commandes WL Sys (follow, pvsys...)"),
+            discord.SelectOption(label="👑 Privilege", value="privilege", description="Whitelist Privilege"),
         ]
         super().__init__(
-            placeholder="Choisir le rôle à WL en masse...",
+            placeholder="Quelle WL donner ?",
             options=options,
             min_values=1,
             max_values=1,
@@ -956,22 +963,62 @@ class WLMasseRoleSelect(discord.ui.Select):
         if not is_sys_plus(interaction.user.id):
             return await interaction.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
 
-        role = self.guild.get_role(int(self.values[0]))
-        if not role:
-            return await interaction.response.send_message(embed=embed_err("Rôle introuvable."), ephemeral=True)
-
-        wl      = self.wl_type
+        guild = self.guild
+        wl = self.values[0]
         icon, label, color = WL_LABELS[wl]
-        members = [m for m in role.members if not m.bot]
 
+        def prompt(extra: str = "") -> discord.Embed:
+            e = discord.Embed(
+                title=f"{icon}  WL masse  ·  {label}",
+                description=(
+                    f"{extra}"
+                    "**À quel rôle donner cette WL ?**\n"
+                    "Écris dans ce salon son **nom** ou son **ID** (60 secondes).\n"
+                    "*Évite de le mentionner pour ne pas ping tout le rôle.*\n"
+                    "Écris `annuler` pour stopper."
+                ),
+                color=color, timestamp=datetime.utcnow(),
+            )
+            footer(e, interaction.user)
+            return e
+
+        await interaction.response.edit_message(embed=prompt(), view=None)
+
+        def check(m: discord.Message):
+            return m.author.id == interaction.user.id and m.channel.id == interaction.channel_id
+
+        role = None
+        while role is None:
+            try:
+                msg = await bot.wait_for("message", check=check, timeout=60)
+            except asyncio.TimeoutError:
+                return await interaction.edit_original_response(
+                    embed=embed_warn("Temps écoulé, relance depuis le panel."), view=None
+                )
+            content = msg.content.strip()
+            found = msg.role_mentions[0] if msg.role_mentions else None
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            if content.lower() in ("annuler", "cancel", "stop"):
+                return await interaction.edit_original_response(
+                    embed=embed_warn("WL masse annulée."), view=None
+                )
+            role = found or _find_role(guild, content)
+            if role is None:
+                await interaction.edit_original_response(
+                    embed=prompt(f"❌ Rôle **{discord.utils.escape_markdown(content[:50])}** introuvable, réessaie.\n\n"),
+                    view=None,
+                )
+
+        members = [m for m in role.members if not m.bot]
         if not members:
-            return await interaction.response.send_message(
-                embed=embed_warn(f"Le rôle **{role.name}** n'a aucun membre."), ephemeral=True
+            return await interaction.edit_original_response(
+                embed=embed_warn(f"Le rôle **{role.name}** n'a aucun membre."), view=None
             )
 
-        # Attribuer la WL à chacun
-        ok_count   = 0
-        skip_count = 0
+        ok_count, skip_count = 0, 0
         for m in members:
             lst = whitelisted.setdefault(m.id, [])
             if wl not in lst:
@@ -988,15 +1035,14 @@ class WLMasseRoleSelect(discord.ui.Select):
                 f"**{ok_count}** membre(s) ont reçu la **{label}**.\n"
                 f"**{skip_count}** l'avaient déjà."
             ),
-            color=color,
-            timestamp=datetime.utcnow(),
+            color=color, timestamp=datetime.utcnow(),
         )
-        e.set_thumbnail(url=self.guild.icon.url if self.guild.icon else None)
+        e.set_thumbnail(url=guild.icon.url if guild.icon else None)
         footer(e, interaction.user)
-        await interaction.response.edit_message(embed=e, view=None)
+        await interaction.edit_original_response(embed=e, view=None)
 
         asyncio.create_task(send_log(
-            self.guild, interaction.user, "wl_masse", f"WL masse  {label}",
+            guild, interaction.user, "wl_masse", f"WL masse  {label}",
             [
                 ("⌨️ Commande", "`&wlpanel`"),
                 ("🏷️ WL",       f"`{wl}`  {icon}"),
@@ -1006,59 +1052,22 @@ class WLMasseRoleSelect(discord.ui.Select):
             ],
         ))
 
-        # DM à chaque nouveau WL
         async def _notify():
             for m in members:
                 if wl in whitelisted.get(m.id, []):
                     try:
                         dm = discord.Embed(
                             title=f"{icon}  Nouvelle whitelist !",
-                            description=f"Tu as reçu la **{label}** sur **{self.guild.name}**.",
+                            description=f"Tu as reçu la **{label}** sur **{guild.name}**.",
                             color=color, timestamp=datetime.utcnow(),
                         )
-                        dm.set_thumbnail(url=self.guild.icon.url if self.guild.icon else None)
+                        dm.set_thumbnail(url=guild.icon.url if guild.icon else None)
                         footer(dm)
                         await m.send(embed=dm)
                     except Exception:
                         pass
                     await asyncio.sleep(0.5)
         asyncio.create_task(_notify())
-
-
-class WLMasseTypeSelect(discord.ui.Select):
-    """Étape 0 : choisir le type de WL à attribuer en masse."""
-    def __init__(self, guild: discord.Guild):
-        self.guild = guild
-        options = [
-            discord.SelectOption(label="🎤 VoiceVIP",  value="voicevip",  description="Accès aux vocaux privés"),
-            discord.SelectOption(label="🌐 Server",    value="server",    description="Commandes server (dog, snap, wakeup...)"),
-            discord.SelectOption(label="⚡ WL Sys",    value="sys",       description="Commandes WL Sys (follow, pvsys...)"),
-            discord.SelectOption(label="👑 Privilege", value="privilege", description="Whitelist Privilege"),
-        ]
-        super().__init__(
-            placeholder="Choisir la WL à attribuer en masse...",
-            options=options,
-            min_values=1,
-            max_values=1,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        if not is_sys_plus(interaction.user.id):
-            return await interaction.response.send_message(embed=embed_err("Réservé aux Sys+."), ephemeral=True)
-
-        wl_type = self.values[0]
-        icon, label, color = WL_LABELS[wl_type]
-
-        e = discord.Embed(
-            title=f"{icon}  WL masse  ·  {label}",
-            description="Choisis maintenant le **rôle** dont les membres recevront cette WL.",
-            color=color,
-            timestamp=datetime.utcnow(),
-        )
-        footer(e, interaction.user)
-        view = discord.ui.View(timeout=120)
-        view.add_item(WLMasseRoleSelect(self.guild, wl_type))
-        await interaction.response.edit_message(embed=e, view=view)
 
 
 class WLMasseView(discord.ui.View):
@@ -1219,8 +1228,8 @@ class WLPanelMainView(discord.ui.View):
         e = discord.Embed(
             title="🎭  WL masse  ·  Par rôle",
             description=(
-                "Sélectionne d'abord le **type de WL** à attribuer,\n"
-                "puis le **rôle** dont tous les membres la recevront."
+                "Choisis d'abord la **WL** à attribuer.\n"
+                "Je te demanderai ensuite le **rôle** (nom ou ID) dans le salon."
             ),
             color=C["sys"],
             timestamp=datetime.utcnow(),
